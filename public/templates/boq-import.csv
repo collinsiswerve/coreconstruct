@@ -1,0 +1,3 @@
+code,description,stage,unit,quantity,clientRate,allowance,labourAllowance
+F01,Foundation concrete,Substructure,m3,20,16000,250000,40000
+W01,External blockwork,Superstructure,m2,100,3000,220000,50000

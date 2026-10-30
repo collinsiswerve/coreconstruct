@@ -1,0 +1,8 @@
+import type { ReactNode } from 'react';
+import { ClipboardList, CheckCircle2, Clock3 } from 'lucide-react';
+import { kes } from '../lib/domain';
+export function Badge({ children, tone = 'neutral' }: { children: ReactNode; tone?: string }) { return <span className={'badge ' + tone}>{children}</span>; }
+export function Status({ status, paid = 0, amount = 0 }: { status: string; paid?: number; amount?: number }) { const label = status === 'approved' ? paid >= amount ? 'Settled' : paid ? 'Part paid' : 'Approved' : status === 'returned' ? 'Returned' : 'Awaiting review'; return <Badge tone={status === 'approved' ? 'green' : status === 'returned' ? 'red' : 'amber'}>{status === 'approved' ? <CheckCircle2 size={11} /> : <Clock3 size={11} />}{label}</Badge>; }
+export function Empty({ title, text, action }: { title: string; text: string; action?: ReactNode }) { return <div className="empty"><span className="empty-icon"><ClipboardList size={25} /></span><h3>{title}</h3><p>{text}</p>{action}</div>; }
+export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) { return <label className="field"><span>{label}</span>{children}{hint && <small>{hint}</small>}</label>; }
+export function WageTable({ entries }: { entries: { name: string; units: number; grossCents: number; advanceCents: number; payableCents: number }[] }) { return <div className="table-scroll"><table><thead><tr><th>WORKER</th><th>DAYS</th><th>GROSS</th><th>ADVANCES</th><th>NET</th></tr></thead><tbody>{entries.map((e, i) => <tr key={i}><td>{e.name}</td><td>{e.units / 2}</td><td>{kes(e.grossCents)}</td><td>{kes(e.advanceCents)}</td><td className="strong">{kes(e.payableCents)}</td></tr>)}</tbody></table></div>; }

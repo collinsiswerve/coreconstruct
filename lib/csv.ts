@@ -1,0 +1,6 @@
+import { DomainError } from './domain';
+export function parseCsv(text:string):Record<string,string>[] {
+ if(text.length>200000)throw new DomainError('Use a CSV smaller than 200 KB.');const rows:string[][]=[],row:string[]=[];let cell='',quoted=false;
+ for(let i=0;i<text.length;i++){const c=text[i];if(quoted){if(c==='"'&&text[i+1]==='"'){cell+='"';i++;}else if(c==='"')quoted=false;else cell+=c;}else if(c==='"'){if(cell)throw new DomainError('Invalid CSV quoting.');quoted=true;}else if(c===','){row.push(cell);cell='';}else if(c==='\n'||c==='\r'){if(c==='\r'&&text[i+1]==='\n')i++;row.push(cell);if(row.some(x=>x.trim()))rows.push([...row]);row.length=0;cell='';}else cell+=c;}
+ if(quoted)throw new DomainError('CSV contains an unclosed quoted field.');if(cell||row.length){row.push(cell);if(row.some(x=>x.trim()))rows.push([...row]);}if(rows.length<2)throw new DomainError('CSV needs headings and at least one item.');const headers=rows.shift()!.map(x=>x.replace(/^\uFEFF/,'').trim());if(new Set(headers).size!==headers.length||headers.some(h=>!h||['__proto__','constructor','prototype'].includes(h)))throw new DomainError('Use unique, non-empty CSV headings.');return rows.map((r,i)=>{if(r.length!==headers.length)throw new DomainError(`CSV row ${i+2} has the wrong number of columns.`);return Object.fromEntries(headers.map((h,j)=>[h,r[j].trim()]));});
+}
