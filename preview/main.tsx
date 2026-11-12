@@ -42,8 +42,8 @@ function Demo() {
   const receiptPdf = params.get('receiptPdf');
   if (!client && !receipt && !receiptPdf) return <Workspace />;
   return <>
-    <div className="demo-return"><a href="./">← Back to workspace</a><span>Fictional sample records</span></div>
-    {client ? <PortalClient projectId={client} /> : receipt ? <ReceiptStatus id={receipt} org="" /> : <ReceiptDownload id={receiptPdf!} />}
+    <div className="demo-return"><a href="./?view=finance">← Back to workspace</a><span>Fictional sample records</span></div>
+    {receipt ? <ReceiptStatus id={receipt} org="" /> : receiptPdf ? <ReceiptDownload id={receiptPdf} /> : <PortalClient projectId={client!} />}
   </>;
 }
 

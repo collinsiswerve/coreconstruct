@@ -1,9 +1,10 @@
 import { applyCommand, DomainError, emptyState, moneyToCents, dateKey, addDays, monday, totals, type Command, type State } from './domain';
 import type { Actor, Brand, BoqItem, Delivery, Drawing, LocationEvidence, Module, Modules, OrderLine, ProjectDetails, SuiteData, SuiteState, Variation } from './suite-types';
+import { activeFunding, emptyFinance, linkFunding, saveFinanceReview, saveReceiptPlan } from './project-finance';
 export const moduleDefaults: Modules = { design: true, boq: true, wages: true, materials: true, portal: true, variations: true };
 export const detailDefaults = (): ProjectDetails => ({ geofenceMeters: 150, lrNumber: '', county: '', clientEmail: '', clientPhone: '', clientTimezone: 'Africa/Nairobi', currency: 'KES', fxKesPerUnit: 1, fxAsOf: '', brief: '', startDate: '', estimatedCompletion: '', forecastRemainingCents: 0, managementFeeBps: 0, modules: {} });
-export const emptySuite = (): SuiteData => ({ version: 2, brand: { primary: '#216447', accent: '#b58e42', theme: 'light', logoFileId: '', kraPin: '', ncaNumber: '', address: '', phone: '', email: '', preset: 'design-build', enforceGps: true, enforceWorkerIdentity: false }, modules: { ...moduleDefaults }, projectDetails: {}, boq: [], materials: [], orders: [], deliveries: [], stock: [], invoices: [], drawings: [], acknowledgements: [], designAcceptances: [], media: [], variations: [], receipts: [], actions: [], milestones: [], sequences: { orders: 0, variations: 0, receipts: 0 }, publishedWeeks: {}, identities: {}, piecework: [], appliedPiecework: {}, commandFingerprints: {} });
-export function normalizeState(value: State | SuiteState): SuiteState { return { ...emptyState(), ...value, suite: { ...emptySuite(), ...('suite' in value ? value.suite : {}) } }; }
+export const emptySuite = (): SuiteData => ({ version: 2, finance: emptyFinance(), brand: { primary: '#216447', accent: '#b58e42', theme: 'light', logoFileId: '', kraPin: '', ncaNumber: '', address: '', phone: '', email: '', preset: 'design-build', enforceGps: true, enforceWorkerIdentity: false }, modules: { ...moduleDefaults }, projectDetails: {}, boq: [], materials: [], orders: [], deliveries: [], stock: [], invoices: [], drawings: [], acknowledgements: [], designAcceptances: [], media: [], variations: [], receipts: [], actions: [], milestones: [], sequences: { orders: 0, variations: 0, receipts: 0 }, publishedWeeks: {}, identities: {}, piecework: [], appliedPiecework: {}, commandFingerprints: {} });
+export function normalizeState(value: State | SuiteState): SuiteState { return { ...emptyState(), ...value, suite: { ...emptySuite(), ...('suite' in value ? value.suite : {}), finance: { ...emptyFinance(), ...('suite' in value ? value.suite.finance : {}) } } }; }
 export const fail = (message: string, status = 400): never => { throw new DomainError(message, status); };
 export const required = (v: unknown, name: string, max = 240): string => { const s = String(v ?? '').trim(); if (!s || s.length > max) fail(`${name} is required (maximum ${max} characters).`); return s; };
 export const optionalText = (v: unknown, max = 1000): string => String(v ?? '').trim().slice(0, max);
@@ -96,7 +97,7 @@ export function executeSuite(original: State | SuiteState, command: Command, act
       const currency = String(p.currency || 'KES'); if (!['KES','USD','GBP','EUR'].includes(currency)) fail('Choose KES, USD, GBP or EUR.'); const fx = currency === 'KES' ? 1 : Number(p.fxKesPerUnit); if (!Number.isFinite(fx) || fx <= 0) fail('Enter a positive reference exchange rate.');
       try{new Intl.DateTimeFormat('en',{timeZone:String(p.clientTimezone||'Africa/Nairobi')});}catch{fail('Enter a valid IANA timezone, for example Africa/Nairobi.');}
       if(p.startDate&&p.estimatedCompletion&&String(p.estimatedCompletion)<String(p.startDate))fail('Estimated completion cannot precede the start date.');
-      s.suite.projectDetails[x.id] = { latitude: lat, longitude: lng, geofenceMeters: radius, lrNumber: optionalText(p.lrNumber, 120), county: optionalText(p.county, 80), clientEmail: optionalText(p.clientEmail, 120).toLowerCase(), clientPhone: optionalText(p.clientPhone, 50), clientTimezone: optionalText(p.clientTimezone, 80) || 'Africa/Nairobi', currency, fxKesPerUnit: fx, fxAsOf: currency === 'KES' ? '' : isoDate(p.fxAsOf), brief: optionalText(p.brief, 6000), startDate: isoDate(p.startDate, true), estimatedCompletion: isoDate(p.estimatedCompletion, true), forecastRemainingCents: cents(p.forecastRemaining || '0', true), managementFeeBps: Math.round(fee * 100), modules: overrides }; description = `Updated plot, brief and financial settings for ${x.name}`; break;
+      s.suite.projectDetails[x.id] = { latitude: lat, longitude: lng, geofenceMeters: radius, lrNumber: optionalText(p.lrNumber, 120), county: optionalText(p.county, 80), clientEmail: optionalText(p.clientEmail, 120).toLowerCase(), clientPhone: optionalText(p.clientPhone, 50), clientTimezone: optionalText(p.clientTimezone, 80) || 'Africa/Nairobi', currency, fxKesPerUnit: fx, fxAsOf: currency === 'KES' ? '' : isoDate(p.fxAsOf), brief: optionalText(p.brief, 6000), startDate: isoDate(p.startDate, true), estimatedCompletion: isoDate(p.estimatedCompletion, true), forecastRemainingCents: p.forecastRemaining === undefined || (actor.role !== 'admin' && actor.projectRoles[x.id] !== 'finance') ? old.forecastRemainingCents : cents(p.forecastRemaining || '0', true), managementFeeBps: Math.round(fee * 100), modules: overrides }; description = `Updated plot, brief and financial settings for ${x.name}`; break;
     }
     case 'boq.import': {
       const x = project(); if (!Array.isArray(p.rows) || p.rows.length === 0 || p.rows.length > 500) fail('Import between 1 and 500 BOQ rows.');
@@ -167,8 +168,51 @@ export function executeSuite(original: State | SuiteState, command: Command, act
       before={...v};if(command.type==='variation.recordClientDecision'){v.externalEvidence=required(p.evidenceFileId,'Signed client decision evidence',100);v.decisionNote=required(p.decisionNote,'Client authority and decision note',1000);}
       const decision=String(p.decision);if(!['accept','reject'].includes(decision))fail('Choose accept or reject.');if(decision==='accept'){const financials=projectFinancials(s,v.projectId);if(financials.contract+v.clientDeltaCents<0||financials.allowance+v.internalDeltaCents<0)fail('An accepted reduction cannot make the contract or allowance negative.');}v.status=decision==='accept'?'accepted':'rejected';v.decisionAt=at;v.decisionBy=actor.id;v.decisionEmail=actor.email;v.approvedRevision=v.revision;description=`${decision==='accept'?'Accepted':'Rejected'} ${v.number} revision ${v.revision}${v.externalEvidence?' from recorded external client evidence':''}`;break;
     }
+    case 'finance.review.save': {
+      const x = project();
+      before = s.suite.finance.reviews[x.id];
+      s.suite.finance.reviews[x.id] = saveFinanceReview(s, x, p, at, actor.id);
+      description = 'Saved a project finance review';
+      break;
+    }
+    case 'finance.bill.record': {
+      const x = project();
+      const kind = p.kind;
+      if (kind !== 'fee-invoice' && kind !== 'payment-certificate') throw new DomainError('Choose an invoice or payment certificate.');
+      const reference = required(p.reference, 'Billing reference', 100);
+      if (s.suite.milestones.some(bill => bill.projectId === x.id && bill.reference?.toLowerCase() === reference.toLowerCase())) throw new DomainError('This billing reference already exists on the project.');
+      s.suite.milestones.push({ id: id(), projectId: x.id, title: required(p.title, 'Billing description', 160), kind, reference, amountCents: cents(p.amount), dueDate: isoDate(p.dueDate), status: 'certified', certifiedAt: at });
+      description = 'Recorded approved client billing item ' + reference;
+      break;
+    }
+    case 'finance.receipt.plan': {
+      const receipt = get(s.suite.receipts, p.receiptId, 'Receipt');
+      projectId = receipt.projectId;
+      before = s.suite.finance.plans[receipt.id];
+      s.suite.finance.plans[receipt.id] = saveReceiptPlan(s, receipt, p);
+      description = 'Updated billing and spending allocations for ' + receipt.number;
+      break;
+    }
+    case 'finance.funding.link': {
+      const receipt = get(s.suite.receipts, p.receiptId, 'Receipt');
+      projectId = receipt.projectId;
+      s.suite.finance.fundingLinks.push({ id: id(), receiptId: receipt.id, ...linkFunding(s, receipt, p), linkedAt: at, linkedBy: actor.id });
+      description = 'Linked confirmed spending to ' + receipt.number;
+      break;
+    }
+    case 'finance.funding.reverse': {
+      const link = get(s.suite.finance.fundingLinks, p.linkId, 'Funding link');
+      const receipt = get(s.suite.receipts, link.receiptId, 'Receipt');
+      projectId = receipt.projectId;
+      if (link.reversedAt) throw new DomainError('This funding link is already reversed.');
+      before = { ...link };
+      link.reason = required(p.reason, 'Reason for reversing the link', 240);
+      link.reversedAt = at;
+      description = 'Reversed funding link for ' + receipt.number;
+      break;
+    }
     case 'receipt.issue': {const x=project(),ref=required(p.reference,'Confirmed client payment reference',100);if(s.suite.receipts.some(r=>!r.voidedAt&&r.reference.toLowerCase()===ref.toLowerCase()))fail('This client payment reference is already receipted.');const date=isoDate(p.date);if(date>dateKey(new Date(at)))fail('A receipt cannot confirm a future payment.');s.suite.receipts.push({id:id(),projectId:x.id,number:`RCP-${at.slice(0,4)}-${String(++s.suite.sequences.receipts).padStart(5,'0')}`,title:required(p.title,'Receipt title',160),amountCents:cents(p.amount),method:required(p.method,'Payment method',40),reference:ref,date,issuedAt:at,issuedBy:actor.id});description=`Issued client receipt ${s.suite.receipts.at(-1)!.number}`;break;}
-    case 'receipt.void': {const r=get(s.suite.receipts,p.receiptId,'Receipt');projectId=r.projectId;if(r.voidedAt)fail('Receipt is already void.');before={...r};r.voidedAt=at;r.reason=required(p.reason,'Reason');description=`Voided ${r.number}; receipt number retained`;break;}
+    case 'receipt.void': {const r=get(s.suite.receipts,p.receiptId,'Receipt');projectId=r.projectId;if(r.voidedAt)fail('Receipt is already void.');if(activeFunding(s,r.projectId).some(link=>link.receiptId===r.id))fail('Reverse the receipt’s funding links before voiding it.');before={...r};r.voidedAt=at;r.reason=required(p.reason,'Reason');description=`Voided ${r.number}; receipt number retained`;break;}
     case 'action.create': {const x=project(),kind=String(p.kind);if(!['action','rfi','instruction','snag'].includes(kind))fail('Choose a valid record type.');s.suite.actions.push({id:id(),projectId:x.id,kind:kind as 'action',title:required(p.title,'Title',300),owner:required(p.owner,'Responsible person',100),dueDate:isoDate(p.dueDate),status:'open',createdAt:at,note:optionalText(p.note,2000)});description=`Recorded a ${kind} with an owner and due date`;break;}
     case 'action.close': {const a=get(s.suite.actions,p.actionId,'Action');projectId=a.projectId;if(a.status==='closed')fail('This action is already closed.');before={...a};a.status='closed';a.closedAt=at;a.note=required(p.note,'Closure note',2000);description=`Closed ${a.kind}: ${a.title}`;break;}
     case 'milestone.create': {const x=project();s.suite.milestones.push({id:id(),projectId:x.id,title:required(p.title,'Milestone',160),amountCents:cents(p.amount),dueDate:isoDate(p.dueDate),status:'planned'});description='Added a client billing milestone';break;}

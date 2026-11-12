@@ -3,7 +3,11 @@ import { createContext, useContext } from 'react';
 type WorkspaceRuntime = {
   request: typeof fetch;
   href: (path: string) => string;
-  demo?: { reset: () => Promise<void> };
+  demo?: {
+    reset: () => Promise<void>;
+    role: string;
+    switchRole: (role: string, projectId: string) => void;
+  };
 };
 
 export const WorkspaceRuntimeContext = createContext<WorkspaceRuntime>({

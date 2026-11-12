@@ -1,9 +1,9 @@
 import { DomainError, type Command } from '../lib/domain';
-import { authorize, clientView, filterState } from '../lib/security';
-import { executeSuite, get } from '../lib/suite';
+import { authorize, clientView, filterState, roleFor } from '../lib/security';
+import { enabled, executeSuite, get, normalizeState } from '../lib/suite';
 import type { Actor, SuiteState } from '../lib/suite-types';
 import { openDemoFiles } from './files';
-import { principal, sampleWorkspace } from './sample';
+import { addSampleFinance, principal, sampleWorkspace } from './sample';
 
 const storageKey = 'coreconstruct-pages-demo-v1';
 const allowedTypes = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'video/mp4']);
@@ -11,6 +11,9 @@ const allowedTypes = new Set(['application/pdf', 'image/jpeg', 'image/png', 'ima
 export async function createDemoRuntime() {
   const root = new URL('./', window.location.href);
   const files = await openDemoFiles();
+  const params = new URLSearchParams(window.location.search);
+  const requestedRole = params.get('as');
+  const previewRole = requestedRole === 'pm' || requestedRole === 'accounts' || requestedRole === 'finance' ? requestedRole : 'admin';
   let current = sampleWorkspace();
 
   function save(state: SuiteState) {
@@ -22,7 +25,10 @@ export async function createDemoRuntime() {
     const raw = localStorage.getItem(storageKey);
     if (raw) {
       const state = JSON.parse(raw) as SuiteState;
-      if (state.schemaVersion === 1 && state.suite?.version === 2) current = state;
+      if (state.schemaVersion === 1 && state.suite?.version === 2) {
+        current = normalizeState(state);
+        if (!state.suite.finance) save(addSampleFinance(current));
+      }
     } else {
       save(current);
     }
@@ -36,22 +42,32 @@ export async function createDemoRuntime() {
       const sample = { 'floor-plan-r1': 'floor-plan-r1.pdf', 'floor-plan-r2': 'floor-plan-r2.pdf' }[id];
       return sample ? new URL('samples/' + sample, root).href : files.href(id) || '#';
     }
-    if (kind === 'api' && type === 'receipts' && id) return new URL('?receiptPdf=' + encodeURIComponent(id), root).href;
+    if ((kind === 'api' && type === 'receipts' && id) || (kind === 'receipts' && type)) {
+      const query = new URLSearchParams(params);
+      query.delete('view');
+      query.delete('receipt');
+      query.delete('receiptPdf');
+      query.set(kind === 'api' ? 'receiptPdf' : 'receipt', kind === 'api' ? id : type);
+      return new URL('?' + query, root).href;
+    }
     if (kind === 'client' && type) return new URL('?client=' + encodeURIComponent(type), root).href;
-    if (kind === 'receipts' && type) return new URL('?receipt=' + encodeURIComponent(type), root).href;
     return new URL(path.replace(/^\//, ''), root).href;
   }
 
   function actorFor(state: SuiteState): Actor {
-    const projectId = new URLSearchParams(window.location.search).get('client');
-    if (!projectId || !state.projects.some((p) => p.id === projectId)) return principal;
+    const client = params.get('client');
+    const role = client ? 'client' : previewRole;
+    if (role === 'admin') return principal;
+    const project = state.projects.find(item => item.id === (client || params.get('project')))
+      || state.projects.find(item => item.demo);
+    const names = { client: 'Sample client', pm: 'Demo PM / QS', accounts: 'Demo Accounts', finance: 'Demo Finance' };
     return {
-      id: 'demo-client',
-      name: 'Sample client',
-      email: 'client@example.invalid',
-      role: 'client',
+      id: 'demo-' + role,
+      name: names[role],
+      email: role + '@example.invalid',
+      role,
       organizationId: principal.organizationId,
-      projectRoles: { [projectId]: 'client' },
+      projectRoles: project ? { [project.id]: role } : {},
     };
   }
 
@@ -95,11 +111,16 @@ export async function createDemoRuntime() {
       if (url.pathname === '/api/portal') return Response.json({ links: [] });
       if (url.pathname === '/api/client-view') {
         const projectId = url.searchParams.get('projectId') || '';
+        if (!['admin','pm','client'].includes(roleFor(actor, projectId))) throw new DomainError('Client view is unavailable for this role.', 403);
         return Response.json({ portal: clientView(state, projectId), organizationId: actor.organizationId, actor });
       }
 
       if (url.pathname.startsWith('/api/receipts/')) {
         const receipt = get(state.suite.receipts, url.pathname.split('/').at(-1), 'Sample receipt');
+        const role = roleFor(actor, receipt.projectId);
+        if (!['admin','pm','finance','accounts','client'].includes(role) || (role === 'client' && !enabled(state, receipt.projectId, 'portal'))) {
+          throw new DomainError('Receipt access is unavailable for this role.', 403);
+        }
         if (url.searchParams.get('format') === 'json') return Response.json({
           ...receipt, firm: state.firm,
           project: state.projects.find((project) => project.id === receipt.projectId)?.name,
@@ -121,6 +142,15 @@ export async function createDemoRuntime() {
     request,
     href,
     demo: {
+      role: previewRole,
+      switchRole(role: string, projectId: string) {
+        if (role === 'client' && projectId) {
+          location.assign(href('/client/' + projectId));
+          return;
+        }
+        const query = new URLSearchParams({ view: 'finance', as: role, project: projectId });
+        location.assign(new URL('?' + query, root));
+      },
       async reset() {
         await files.clear();
         localStorage.removeItem(storageKey);
