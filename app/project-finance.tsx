@@ -113,6 +113,8 @@ export function ProjectFinance({ state, project, role, organizationId, saving, e
   const receipts = state.suite.receipts.filter(receipt => receipt.projectId === projectId).sort((a, b) => b.date.localeCompare(a.date));
   const bills = state.suite.milestones.filter(bill => bill.projectId === projectId && bill.status === 'certified');
   const outflows = allowLedger ? confirmedOutflows(state, projectId) : [];
+  const canLoadSample = role === 'admin' && project.demo && !review && !receipts.length
+    && !state.suite.milestones.some(bill => bill.projectId === projectId);
 
   function open(spec: SuiteFormSpec) {
     setForm({ ...spec, payload: { projectId, ...spec.payload } });
@@ -216,6 +218,12 @@ export function ProjectFinance({ state, project, role, organizationId, saving, e
   const profitDetail = figures ? (figures.profitToDate < 0 ? 'Loss' : figures.profitToDate > 0 ? 'Profit' : 'Break-even') + ' through ' + review!.asOf : 'Awaiting finance review';
 
   return <div className="finance-page">
+    {canLoadSample && <div className="notice subtle">
+        <span>Load a fictional finance review, certificate and linked receipt into this sample project.</span>
+        <button className="btn small" disabled={saving} onClick={() => void command('demo.finance.load', { projectId }, 'Sample finance records loaded.')}>
+          Load sample finance records
+        </button>
+      </div>}
     <section className="finance-cards" aria-label="Project finance summary">
       {allowProfit ? <>
         <Card title="Profit / loss to date" amount={figures?.profitToDate ?? null} detail={profitDetail} signed icon={<BarChart3 size={16} />} />

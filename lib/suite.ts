@@ -1,6 +1,7 @@
 import { applyCommand, DomainError, emptyState, moneyToCents, dateKey, addDays, monday, totals, type Command, type State } from './domain';
 import type { Actor, Brand, BoqItem, Delivery, Drawing, LocationEvidence, Module, Modules, OrderLine, ProjectDetails, SuiteData, SuiteState, Variation } from './suite-types';
-import { activeFunding, emptyFinance, linkFunding, saveFinanceReview, saveReceiptPlan } from './project-finance';
+import { activeFunding, emptyFinance, linkFunding, openCommitments, saveFinanceReview, saveReceiptPlan } from './project-finance';
+import { addSampleFinance } from './sample-finance';
 export const moduleDefaults: Modules = { design: true, boq: true, wages: true, materials: true, portal: true, variations: true };
 export const detailDefaults = (): ProjectDetails => ({ geofenceMeters: 150, lrNumber: '', county: '', clientEmail: '', clientPhone: '', clientTimezone: 'Africa/Nairobi', currency: 'KES', fxKesPerUnit: 1, fxAsOf: '', brief: '', startDate: '', estimatedCompletion: '', forecastRemainingCents: 0, managementFeeBps: 0, modules: {} });
 export const emptySuite = (): SuiteData => ({ version: 2, finance: emptyFinance(), brand: { primary: '#216447', accent: '#b58e42', theme: 'light', logoFileId: '', kraPin: '', ncaNumber: '', address: '', phone: '', email: '', preset: 'design-build', enforceGps: true, enforceWorkerIdentity: false }, modules: { ...moduleDefaults }, projectDetails: {}, boq: [], materials: [], orders: [], deliveries: [], stock: [], invoices: [], drawings: [], acknowledgements: [], designAcceptances: [], media: [], variations: [], receipts: [], actions: [], milestones: [], sequences: { orders: 0, variations: 0, receipts: 0 }, publishedWeeks: {}, identities: {}, piecework: [], appliedPiecework: {}, commandFingerprints: {} });
@@ -31,7 +32,8 @@ export function locationEvidence(details: ProjectDetails, input: unknown, at: st
 export function projectFinancials(s: SuiteState, projectId: string) {
   const p = get(s.projects, projectId, 'Project'), t = totals(s, projectId), d = s.suite.projectDetails[projectId] || detailDefaults(), accepted = s.suite.variations.filter(v => v.projectId === projectId && v.status === 'accepted');
   const contract = p.contractCents + accepted.reduce((n, v) => n + v.clientDeltaCents, 0), allowance = p.budgetCents + accepted.reduce((n, v) => n + v.internalDeltaCents, 0), receipts = s.suite.receipts.filter(r => r.projectId === projectId && !r.voidedAt).reduce((n, r) => n + r.amountCents, 0);
-  const committed = s.suite.orders.filter(o => o.projectId === projectId && o.status === 'approved').reduce((n, o) => n + o.totalCents, 0), invoiced = s.suite.invoices.filter(i => i.projectId === projectId && i.status === 'approved').reduce((n, i) => n + i.totalCents, 0), outstandingCommitment = Math.max(0, committed - invoiced), forecastRemaining = Math.max(d.forecastRemainingCents, outstandingCommitment);
+  const committed = s.suite.orders.filter(o => o.projectId === projectId && o.status === 'approved').reduce((n, o) => n + o.totalCents, 0);
+  const outstandingCommitment = openCommitments(s, projectId), forecastRemaining = Math.max(d.forecastRemainingCents, outstandingCommitment);
   const fee = Math.round(t.incurred * d.managementFeeBps / 10000), completionDays = accepted.filter(v => v.affectsCompletion).reduce((n, v) => n + v.days, 0);
   return { ...t, contract, allowance, clientReceived: receipts, contractBalance: contract - receipts, committed, outstandingCommitment, forecastRemaining, forecastFinalCost: t.incurred + forecastRemaining, fee, openBookClientTotal: t.incurred + fee, indicativeMargin: contract - (t.incurred + forecastRemaining), estimatedCompletion: d.estimatedCompletion ? addDays(d.estimatedCompletion, completionDays) : '' };
 }
@@ -167,6 +169,14 @@ export function executeSuite(original: State | SuiteState, command: Command, act
       if(command.type==='variation.recordClientDecision'&&actor.role!=='admin'&&actor.projectRoles[v.projectId]!=='pm')fail('Only the principal or PM may record an external decision.',403);
       before={...v};if(command.type==='variation.recordClientDecision'){v.externalEvidence=required(p.evidenceFileId,'Signed client decision evidence',100);v.decisionNote=required(p.decisionNote,'Client authority and decision note',1000);}
       const decision=String(p.decision);if(!['accept','reject'].includes(decision))fail('Choose accept or reject.');if(decision==='accept'){const financials=projectFinancials(s,v.projectId);if(financials.contract+v.clientDeltaCents<0||financials.allowance+v.internalDeltaCents<0)fail('An accepted reduction cannot make the contract or allowance negative.');}v.status=decision==='accept'?'accepted':'rejected';v.decisionAt=at;v.decisionBy=actor.id;v.decisionEmail=actor.email;v.approvedRevision=v.revision;description=`${decision==='accept'?'Accepted':'Rejected'} ${v.number} revision ${v.revision}${v.externalEvidence?' from recorded external client evidence':''}`;break;
+    }
+    case 'demo.finance.load': {
+      const x = project();
+      if (!x.demo) fail('Sample finance records can only be added to the sample project.');
+      if (s.suite.finance.reviews[x.id] || s.suite.receipts.some(r => r.projectId === x.id) || s.suite.milestones.some(b => b.projectId === x.id)) fail('This sample project already has finance records.');
+      addSampleFinance(s, x.id, actor.id, at);
+      description = 'Loaded fictional sample finance records';
+      break;
     }
     case 'finance.review.save': {
       const x = project();

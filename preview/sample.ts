@@ -1,6 +1,6 @@
 import { addDays, dateKey, emptyState, monday } from '../lib/domain';
 import { detailDefaults, executeSuite } from '../lib/suite';
-import { openCommitments, saveFinanceReview } from '../lib/project-finance';
+import { addSampleFinance as seedSampleFinance } from '../lib/sample-finance';
 import type { Actor, SuiteState } from '../lib/suite-types';
 
 export const principal: Actor = {
@@ -92,37 +92,5 @@ export function sampleWorkspace(): SuiteState {
 export function addSampleFinance(state: SuiteState) {
   const receipt = state.suite.receipts.find(item => item.id === 'receipt-sample' && !item.voidedAt);
   const project = state.projects.find(item => item.demo && item.id === receipt?.projectId);
-  if (!receipt || !project || state.suite.finance.reviews[project.id]) return state;
-
-  const at = new Date().toISOString();
-  const projectId = project.id;
-  const dueDate = dateKey();
-  const contract = project.contractCents + state.suite.variations
-    .filter(item => item.projectId === projectId && item.status === 'accepted')
-    .reduce((sum, item) => sum + item.clientDeltaCents, 0);
-  state.suite.finance.reviews[projectId] = saveFinanceReview(state, project, {
-    revision: 0, asOf: dueDate, earnedRevenue: '375000', staffCost: '18000', overhead: '30000',
-    forecastRevenue: String(contract / 100),
-    uncommitted: String(Math.max(0, (state.suite.projectDetails[projectId]?.forecastRemainingCents || 140_000_000) - openCommitments(state, projectId)) / 100),
-  }, at, principal.id);
-  const billId = 'certificate-demo-001';
-  state.suite.milestones.push({
-    id: billId, projectId, title: 'Mobilisation and early works', reference: 'IPC-DEMO-001',
-    kind: 'payment-certificate', amountCents: 37_500_000, dueDate, status: 'certified', certifiedAt: at,
-  });
-  state.suite.finance.plans[receipt.id] = {
-    revision: 1,
-    applications: [{ milestoneId: billId, amountCents: receipt.amountCents }],
-    allocations: [
-      { category: 'materials', amountCents: 15_000_000 },
-      { category: 'labour', amountCents: 6_000_000 },
-      { category: 'site', amountCents: 2_000_000 },
-    ],
-  };
-  const payment = state.payments.find(item => item.projectId === projectId && !item.reversedAt && item.reference === 'DEMO-BANK-01');
-  if (payment) state.suite.finance.fundingLinks.push({
-    id: 'demo-materials-spending', receiptId: receipt.id, outflowId: 'payment:' + payment.id,
-    category: 'materials', amountCents: payment.amountCents, linkedAt: at, linkedBy: principal.id,
-  });
-  return state;
+  return project ? seedSampleFinance(state, project.id, principal.id, new Date().toISOString()) : state;
 }
