@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
-import { ArrowDownLeft, ArrowUpRight, BarChart3, Download, FileText, Link2, Plus, Wallet } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, BarChart3, ChevronDown, Download, FileText, Link2, Plus, Wallet } from 'lucide-react';
 import { dateKey, kes, totals, type Project } from '../lib/domain';
 import {
   activeFunding, amountApplied, canManageReceipts, canViewProfit, canViewReceiptLedger,
@@ -55,6 +55,7 @@ type Props = {
 export function ProjectFinance({ state, project, role, organizationId, saving, error, command }: Props) {
   const { href } = useWorkspaceRuntime();
   const [form, setForm] = useState<SuiteFormSpec | null>(null);
+  const [expandedReceipts, setExpandedReceipts] = useState<Record<string, boolean>>({});
   const { id: projectId } = project;
   const allowProfit = canViewProfit(role);
   const allowLedger = canViewReceiptLedger(role);
@@ -226,7 +227,7 @@ export function ProjectFinance({ state, project, role, organizationId, saving, e
           })}</tbody></table></div> : <p className="panel-copy">No approved billing items recorded.</p>}
       </Panel>
 
-      <Panel title="Client receipts" description="Expand a receipt to see billing applications, allocations and spending"
+      <Panel title="Client receipts" description="Open a receipt breakdown to see billing applications, allocations and spending"
         action={manageReceipts && <button className="btn primary" onClick={issueReceipt}><Plus size={15} />Record client receipt</button>}>
         {paid > 0 && <div className="finance-notice">{kes(paid - active.reduce((sum, link) => sum + link.amountCents, 0))} paid out without a receipt funding link.</div>}
         {receipts.map(receipt => {
@@ -235,11 +236,20 @@ export function ProjectFinance({ state, project, role, organizationId, saving, e
           const allocated = plan?.allocations.reduce((sum, row) => sum + row.amountCents, 0) || 0;
           const applied = plan?.applications.reduce((sum, row) => sum + row.amountCents, 0) || 0;
           const spent = links.reduce((sum, link) => sum + link.amountCents, 0);
-          return <details className="finance-receipt" key={receipt.id}>
-            <summary><span><strong>{receipt.number}</strong> · {receipt.title}<small>{receipt.date} · {receipt.method} · {receipt.reference}</small></span>
-              <span className="finance-receipt-summary"><strong>{kes(receipt.amountCents)}</strong><Badge tone={receipt.voidedAt ? 'red' : allocated ? 'green' : 'amber'}>{receipt.voidedAt ? 'Void' : allocated === receipt.amountCents ? 'Allocated' : kes(receipt.amountCents - allocated) + ' unallocated'}</Badge></span>
-            </summary>
-            <div className="finance-receipt-body">
+          const expanded = !!expandedReceipts[receipt.id];
+          const breakdownId = 'receipt-breakdown-' + receipt.id;
+          return <article className="finance-receipt" key={receipt.id}>
+            <button type="button" className="finance-receipt-toggle"
+              aria-expanded={expanded} aria-controls={breakdownId}
+              onClick={() => setExpandedReceipts(current => ({ ...current, [receipt.id]: !current[receipt.id] }))}>
+              <span><strong>{receipt.number}</strong> · {receipt.title}<small>{receipt.date} · {receipt.method} · {receipt.reference}</small></span>
+              <span className="finance-receipt-summary">
+                <strong>{kes(receipt.amountCents)}</strong>
+                <Badge tone={receipt.voidedAt ? 'red' : allocated ? 'green' : 'amber'}>{receipt.voidedAt ? 'Void' : allocated === receipt.amountCents ? 'Allocated' : kes(receipt.amountCents - allocated) + ' unallocated'}</Badge>
+                <span className="btn small finance-receipt-disclosure">{expanded ? 'Hide breakdown' : 'View breakdown'} <ChevronDown size={14} aria-hidden="true" /></span>
+              </span>
+            </button>
+            <div id={breakdownId} className="finance-receipt-body" hidden={!expanded}>
               {receipt.voidedAt ? <p className="muted">{receipt.reason}</p> : <>
                 <Figures rows={[
                   ['Applied to client billing', applied], ['Unapplied to client billing', receipt.amountCents - applied],
@@ -267,7 +277,7 @@ export function ProjectFinance({ state, project, role, organizationId, saving, e
                 </>}
               </div>
             </div>
-          </details>;
+          </article>;
         })}
         {!receipts.length && <p className="panel-copy">No client receipts recorded.</p>}
       </Panel>

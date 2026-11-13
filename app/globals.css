@@ -34,11 +34,14 @@
 .finance-notice { padding: 8px 22px 16px; color: var(--muted); }
 .finance-notice .badge { margin-right: 6px; }
 .finance-receipt { border-top: 1px solid var(--line); }
-.finance-receipt summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 15px; cursor: pointer; padding: 16px 22px; }
-.finance-receipt summary:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; }
-.finance-receipt summary small, .finance-lines small { display: block; color: var(--muted); margin-top: 4px; font-size: 11px; overflow-wrap: anywhere; }
-.finance-receipt-summary { display: flex; align-items: center; gap: 12px; }
+.finance-receipt-toggle { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 15px; width: 100%; text-align: left; padding: 16px 22px; }
+.finance-receipt-toggle:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; }
+.finance-receipt-toggle small, .finance-lines small { display: block; color: var(--muted); margin-top: 4px; font-size: 11px; overflow-wrap: anywhere; }
+.finance-receipt-summary { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.finance-receipt-toggle:hover .finance-receipt-disclosure { border-color: var(--teal); }
+.finance-receipt-toggle[aria-expanded="true"] .finance-receipt-disclosure svg { transform: rotate(180deg); }
 .finance-receipt-body { display: grid; gap: 14px; padding: 0 22px 20px; }
+.finance-receipt-body[hidden] { display: none; }
 .finance-lines { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .finance-lines li { display: flex; align-items: center; gap: 10px; }
 .finance-lines li > span { flex: 1; }
@@ -53,8 +56,8 @@
   .finance-cards { grid-template-columns: 1fr; gap: 8px; }
   .finance-card { padding: 13px 16px; gap: 6px; }
   .finance-review-grid { grid-template-columns: 1fr; }
-  .finance-overview-link, .finance-receipt-summary { align-items: flex-start; flex-direction: column; }
-  .finance-receipt summary { gap: 8px; padding: 14px 15px; }
+  .finance-overview-link { align-items: flex-start; flex-direction: column; }
+  .finance-receipt-toggle { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 14px 15px; }
   .finance-receipt-body { padding: 0 15px 16px; }
   .finance-role-select { max-width: 125px; }
 }
