@@ -1,6 +1,7 @@
 import { DomainError, type Command } from '../lib/domain';
 import { authorize, clientView, filterState, roleFor } from '../lib/security';
 import { enabled, executeSuite, get, normalizeState } from '../lib/suite';
+import { addSampleComparisonProjects, sampleProjectCount } from '../lib/sample-projects';
 import type { Actor, SuiteState } from '../lib/suite-types';
 import { openDemoFiles } from './files';
 import { addSampleFinance, principal, sampleWorkspace } from './sample';
@@ -26,8 +27,15 @@ export async function createDemoRuntime() {
     if (raw) {
       const state = JSON.parse(raw) as SuiteState;
       if (state.schemaVersion === 1 && state.suite?.version === 2) {
+        const previousCount = state.projects.length;
         current = normalizeState(state);
-        if (!state.suite.finance) save(addSampleFinance(current));
+        if (!state.suite.finance) addSampleFinance(current);
+        const sampleProjects = current.projects.filter(project => project.demo);
+        const residence = sampleProjects[0];
+        if (residence && sampleProjects.length < sampleProjectCount) {
+          addSampleComparisonProjects(current, residence.id, principal.id, new Date().toISOString());
+        }
+        if (!state.suite.finance || previousCount !== current.projects.length) save(current);
       }
     } else {
       save(current);
@@ -116,7 +124,8 @@ export async function createDemoRuntime() {
       }
 
       if (url.pathname.startsWith('/api/receipts/')) {
-        const receipt = get(state.suite.receipts, url.pathname.split('/').at(-1), 'Sample receipt');
+        const receiptId = decodeURIComponent(url.pathname.split('/').at(-1) ?? '');
+        const receipt = get(state.suite.receipts, receiptId, 'Sample receipt');
         const role = roleFor(actor, receipt.projectId);
         if (!['admin','pm','finance','accounts','client'].includes(role) || (role === 'client' && !enabled(state, receipt.projectId, 'portal'))) {
           throw new DomainError('Receipt access is unavailable for this role.', 403);

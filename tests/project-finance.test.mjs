@@ -12,11 +12,11 @@ const { amountApplied, receiptFundingPosition, receiptTotal, reviewFigures } = a
 const today = dateKey();
 const org = 'director';
 
-function login(userId, role, projectId) {
+function login(userId, role, projectId, organizationId = org) {
   fixture.user = { userId, displayName: userId, email: userId + '@example.test' };
   if (role) {
     fixture.db.prepare('INSERT OR REPLACE INTO memberships (id,organization_id,user_id,email,display_name,role,project_roles,active) VALUES (?,?,?,?,?,?,?,1)')
-      .run(org + ':' + userId, org, userId, fixture.user.email, userId, role, JSON.stringify({ [projectId]: role }));
+      .run(organizationId + ':' + userId, organizationId, userId, fixture.user.email, userId, role, JSON.stringify({ [projectId]: role }));
   }
 }
 
@@ -67,6 +67,60 @@ test('the hosted sample project can load the receipt used in the finance walkthr
   assert.equal(figures.forecastProfit, 55_995_000);
   assert.equal(state.suite.finance.reviews[liveProjectId], undefined);
   assert.equal(state.audit.filter(entry => entry.action === 'demo.finance.load').length, 1);
+});
+
+test('the four sample projects preserve existing records and reconcile independently', async () => {
+  const owner = 'sample-portfolio-owner';
+  login(owner);
+  async function run(type, payload, status = 200, id) {
+    const response = await api.POST(request('/api/workspace', command(type, payload, id), owner));
+    const data = await response.json();
+    assert.equal(response.status, status, JSON.stringify(data));
+    return data;
+  }
+
+  const live = await run('project.create', { name: 'Existing project', location: 'Nairobi', budget: '500000' });
+  const withResidence = await run('demo.load', {});
+  const residence = withResidence.state.projects.find(project => project.demo);
+  const before = await run('demo.finance.load', { projectId: residence.id });
+
+  login('portfolio-accounts', 'accounts', residence.id, owner);
+  await run('demo.portfolio.load', {}, 403);
+  login(owner);
+  const operation = 'load-sample-portfolio';
+  const loaded = await run('demo.portfolio.load', {}, 200, operation);
+  const replay = await run('demo.portfolio.load', {}, 200, operation);
+  assert.equal(replay.version, loaded.version);
+  assert.deepEqual(replay.state, loaded.state);
+  await run('demo.portfolio.load', {}, 400);
+
+  const { state } = loaded;
+  assert.deepEqual(state.projects.slice(0, 2), [live.state.projects[0], residence]);
+  assert.deepEqual(state.suite.finance.reviews[residence.id], before.state.suite.finance.reviews[residence.id]);
+  assert.deepEqual(state.suite.receipts[0], before.state.suite.receipts[0]);
+  const samples = state.projects.filter(project => project.demo);
+  assert.deepEqual(samples.map(project => project.contractCents / 100), [2_250_000, 28_000_000, 85_000_000, 200_000_000]);
+  assert.deepEqual(samples.map(project => reviewFigures(state.suite.finance.reviews[project.id]).forecastProfit / 100),
+    [559_950, 2_600_000, -7_000_000, 20_000_000]);
+
+  const mixedUse = samples[3];
+  const received = receiptTotal(state, mixedUse.id);
+  const cash = totals(state, mixedUse.id).cashPaid;
+  assert.equal((received - cash) / 100, -10_000_000);
+  assert.deepEqual(receiptFundingPosition(received, state.projectFunding[mixedUse.id]), {
+    spentCents: 5_900_000_000, earmarkedCents: 800_000_000, unallocatedCents: 200_000_000,
+  });
+  const [bill] = state.suite.milestones.filter(item => item.projectId === mixedUse.id);
+  assert.equal((bill.amountCents - amountApplied(state, mixedUse.id, bill.id)) / 100, 36_000_000);
+
+  const freshOwner = 'sample-portfolio-fresh';
+  login(freshOwner);
+  const fresh = await api.POST(request('/api/workspace', command('demo.portfolio.load', {}), freshOwner));
+  const initial = await fresh.json();
+  assert.equal(fresh.status, 200, JSON.stringify(initial));
+  assert.equal(initial.state.projects.length, 4);
+  assert.equal(initial.state.suite.receipts.length, 4);
+  assert.equal(initial.state.audit.filter(entry => entry.action === 'demo.portfolio.load').length, 1);
 });
 
 test('client receipts reconcile to billing and confirmed spending with project-level finance permissions', async () => {

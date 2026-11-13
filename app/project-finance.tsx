@@ -9,7 +9,7 @@ import {
   receiptFundingPosition, receiptTotal, reviewFigures, type FundingTotal,
 } from '../lib/project-finance';
 import { projectFinancials } from '../lib/suite';
-import type { ClientReceipt, Role, SuiteState } from '../lib/suite-types';
+import type { Actor, ClientReceipt, Role, SuiteState } from '../lib/suite-types';
 import { SuiteForm, type FormField, type SuiteFormSpec } from './suite-form';
 import { Badge } from './ui';
 import { useWorkspaceRuntime } from './workspace-runtime';
@@ -43,6 +43,44 @@ function Figures({ rows }: { rows: [string, number | null][] }) {
 }
 
 const fundingPercent = new Intl.NumberFormat('en-KE', { style: 'percent', maximumFractionDigits: 1 });
+
+export function SampleProjectComparison({ state, actor, projectId, selectProject }: {
+  state: SuiteState; actor: Actor; projectId: string; selectProject: (id: string) => void;
+}) {
+  const samples = state.projects
+    .filter(project => project.demo && (actor.role === 'admin' || actor.projectRoles[project.id] === 'finance'))
+    .sort((a, b) => a.contractCents - b.contractCents);
+  if (samples.length < 2) return null;
+
+  return <div className="finance-comparison-panel">
+    <Panel title="Compare sample projects" description="Select a project to see its finance review and receipts.">
+      <div className="table-scroll"><table className="finance-comparison" aria-label="Sample project finance comparison">
+        <thead><tr>
+          <th scope="col">Sample project</th><th scope="col">Contract value</th><th scope="col">Profit / loss to date</th>
+          <th scope="col">Forecast profit / loss</th><th scope="col">Forecast margin</th><th scope="col">Tracked cash</th>
+        </tr></thead>
+        <tbody>{samples.map(sample => {
+          const review = state.suite.finance.reviews[sample.id];
+          const figures = review ? reviewFigures(review) : null;
+          const forecast = figures?.forecastProfit ?? null;
+          const margin = forecast !== null && review?.forecastRevenueCents
+            ? fundingPercent.format(forecast / review.forecastRevenueCents) : '—';
+          const cash = receiptTotal(state, sample.id) - totals(state, sample.id).cashPaid;
+          const contract = projectFinancials(state, sample.id).contract;
+          return <tr key={sample.id} data-active={sample.id === projectId}>
+            <th scope="row"><button type="button" className="text-button" aria-current={sample.id === projectId ? 'true' : undefined}
+              onClick={() => selectProject(sample.id)}>{sample.name}</button></th>
+            <td>{kes(contract)}</td>
+            <td data-negative={figures !== null && figures.profitToDate < 0}>{figures ? kes(figures.profitToDate) : '—'}</td>
+            <td data-negative={forecast !== null && forecast < 0}>{forecast === null ? '—' : kes(forecast)}</td>
+            <td data-negative={forecast !== null && forecast < 0}>{margin}</td>
+            <td data-negative={cash < 0}>{kes(cash)}</td>
+          </tr>;
+        })}</tbody>
+      </table></div>
+    </Panel>
+  </div>;
+}
 
 function ClientFundsChart({ received, funding }: { received: number; funding: FundingTotal[] }) {
   if (received === 0) {

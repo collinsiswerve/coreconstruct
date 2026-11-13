@@ -2,6 +2,7 @@ import { applyCommand, DomainError, emptyState, moneyToCents, dateKey, addDays, 
 import type { Actor, Brand, BoqItem, Delivery, Drawing, LocationEvidence, Module, Modules, OrderLine, ProjectDetails, SuiteData, SuiteState, Variation } from './suite-types';
 import { activeFunding, emptyFinance, linkFunding, openCommitments, saveFinanceReview, saveReceiptPlan } from './project-finance';
 import { addSampleFinance } from './sample-finance';
+import { addSampleComparisonProjects, sampleProjectCount } from './sample-projects';
 export const moduleDefaults: Modules = { design: true, boq: true, wages: true, materials: true, portal: true, variations: true };
 export const detailDefaults = (): ProjectDetails => ({ geofenceMeters: 150, lrNumber: '', county: '', clientEmail: '', clientPhone: '', clientTimezone: 'Africa/Nairobi', currency: 'KES', fxKesPerUnit: 1, fxAsOf: '', brief: '', startDate: '', estimatedCompletion: '', forecastRemainingCents: 0, managementFeeBps: 0, modules: {} });
 export const emptySuite = (): SuiteData => ({ version: 2, finance: emptyFinance(), brand: { primary: '#216447', accent: '#b58e42', theme: 'light', logoFileId: '', kraPin: '', ncaNumber: '', address: '', phone: '', email: '', preset: 'design-build', enforceGps: true, enforceWorkerIdentity: false }, modules: { ...moduleDefaults }, projectDetails: {}, boq: [], materials: [], orders: [], deliveries: [], stock: [], invoices: [], drawings: [], acknowledgements: [], designAcceptances: [], media: [], variations: [], receipts: [], actions: [], milestones: [], sequences: { orders: 0, variations: 0, receipts: 0 }, publishedWeeks: {}, identities: {}, piecework: [], appliedPiecework: {}, commandFingerprints: {} });
@@ -169,6 +170,22 @@ export function executeSuite(original: State | SuiteState, command: Command, act
       if(command.type==='variation.recordClientDecision'&&actor.role!=='admin'&&actor.projectRoles[v.projectId]!=='pm')fail('Only the principal or PM may record an external decision.',403);
       before={...v};if(command.type==='variation.recordClientDecision'){v.externalEvidence=required(p.evidenceFileId,'Signed client decision evidence',100);v.decisionNote=required(p.decisionNote,'Client authority and decision note',1000);}
       const decision=String(p.decision);if(!['accept','reject'].includes(decision))fail('Choose accept or reject.');if(decision==='accept'){const financials=projectFinancials(s,v.projectId);if(financials.contract+v.clientDeltaCents<0||financials.allowance+v.internalDeltaCents<0)fail('An accepted reduction cannot make the contract or allowance negative.');}v.status=decision==='accept'?'accepted':'rejected';v.decisionAt=at;v.decisionBy=actor.id;v.decisionEmail=actor.email;v.approvedRevision=v.revision;description=`${decision==='accept'?'Accepted':'Rejected'} ${v.number} revision ${v.revision}${v.externalEvidence?' from recorded external client evidence':''}`;break;
+    }
+    case 'demo.portfolio.load': {
+      if (s.projects.filter(item => item.demo).length >= sampleProjectCount) fail('The sample projects are already available.');
+      let residence = s.projects.find(item => item.demo);
+      if (!residence) {
+        s = normalizeState(applyCommand(s, { id: command.id, type: 'demo.load', payload: {} }, actor.name, at, id));
+        residence = s.projects.at(-1)!;
+        s.commandIds.pop();
+        s.audit.pop();
+      }
+      projectId = residence.id;
+      if (!s.suite.finance.reviews[projectId] && !s.suite.receipts.some(r => r.projectId === projectId)
+        && !s.suite.milestones.some(b => b.projectId === projectId)) addSampleFinance(s, projectId, actor.id, at);
+      addSampleComparisonProjects(s, projectId, actor.id, at);
+      description = 'Loaded fictional sample projects for finance comparison';
+      break;
     }
     case 'demo.finance.load': {
       const x = project();

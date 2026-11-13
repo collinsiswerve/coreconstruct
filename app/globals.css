@@ -25,6 +25,16 @@
 .finance-card .negative { color: #a03431; }
 .finance-panel h2, .finance-overview-link h2 { font-size: 15px; font-weight: 620; }
 .finance-panel .panel-heading p { font-size: 11px; }
+.finance-sample-notice { margin-bottom: 18px; flex-wrap: wrap; }
+.finance-comparison-panel { margin-bottom: 20px; }
+.finance-comparison td, .finance-comparison th { padding: 13px 14px; }
+.finance-comparison td, .finance-comparison thead th:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
+.finance-comparison tbody th { text-transform: none; letter-spacing: normal; }
+.finance-comparison tbody .text-button { margin: 0; font-size: 12px; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+.finance-comparison .text-button[aria-current] { text-decoration: none; font-weight: 700; }
+.finance-comparison tr[data-active="true"] { background: color-mix(in srgb, var(--teal) 9%, transparent); }
+.finance-comparison td[data-negative="true"] { color: #a03431; font-weight: 620; }
+[data-theme="dark"] .finance-comparison td[data-negative="true"] { color: #ffada4; }
 .finance-funds-chart {
   --finance-funds-spent: #216447;
   --finance-funds-earmarked: #d39b38;

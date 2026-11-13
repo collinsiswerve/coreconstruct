@@ -1,6 +1,7 @@
 import { addDays, dateKey, emptyState, monday } from '../lib/domain';
 import { detailDefaults, executeSuite } from '../lib/suite';
 import { addSampleFinance as seedSampleFinance } from '../lib/sample-finance';
+import { addSampleComparisonProjects } from '../lib/sample-projects';
 import type { Actor, SuiteState } from '../lib/suite-types';
 
 export const principal: Actor = {
@@ -86,7 +87,9 @@ export function sampleWorkspace(): SuiteState {
     id: 'advance-sample', projectId, workerId: state.workers[0].id, date: dateKey(),
     amountCents: 50_000, reference: 'DEMO-ADVANCE-001', allocations: [],
   }];
-  return addSampleFinance(state);
+  addSampleFinance(state);
+  addSampleComparisonProjects(state, projectId, principal.id, at);
+  return state;
 }
 
 export function addSampleFinance(state: SuiteState) {
