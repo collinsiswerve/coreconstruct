@@ -7,7 +7,7 @@ const load = moduleLoader(fixture);
 const api = await load('app/api/workspace/route.ts');
 const portal = await load('app/api/client-view/route.ts');
 const { dateKey, totals } = await load('lib/domain.ts');
-const { receiptTotal, reviewFigures } = await load('lib/project-finance.ts');
+const { receiptFundingPosition, receiptTotal, reviewFigures } = await load('lib/project-finance.ts');
 const today = dateKey();
 const org = 'director';
 
@@ -76,6 +76,9 @@ test('client receipts reconcile to billing and confirmed spending with project-l
   assert.equal(state.suite.finance.fundingLinks.length, 1);
   assert.equal(state.projectFunding[projectId].find(row => row.category === 'materials').spentCents, 8_000_000);
   assert.equal(receiptTotal(state, projectId) - totals(state, projectId).cashPaid, 17_000_000);
+  assert.deepEqual(receiptFundingPosition(receiptTotal(state, projectId), state.projectFunding[projectId]), {
+    spentCents: 8_000_000, earmarkedCents: 15_000_000, unallocatedCents: 2_000_000,
+  });
   await post('finance.funding.link', { ...funding, amount: '1' }, 400);
   await post('finance.receipt.plan', { ...plan, revision: 1, allocations: [{ category: 'materials', amount: '79999' }] }, 400);
   await post('receipt.void', { receiptId, reason: 'Correction' }, 400);
@@ -104,6 +107,9 @@ test('client receipts reconcile to billing and confirmed spending with project-l
   login(org);
   state = await post('payment.reverse', { paymentId, reason: 'Reconciled reversal' });
   assert.equal(state.projectFunding[projectId].find(row => row.category === 'materials').spentCents, 0);
+  assert.deepEqual(receiptFundingPosition(receiptTotal(state, projectId), state.projectFunding[projectId]), {
+    spentCents: 0, earmarkedCents: 23_000_000, unallocatedCents: 2_000_000,
+  });
   await post('receipt.void', { receiptId, reason: 'Corrected receipt' });
   assert.deepEqual((await workspace()).projectFunding[projectId], []);
 });

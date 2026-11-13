@@ -25,6 +25,56 @@
 .finance-card .negative { color: #a03431; }
 .finance-panel h2, .finance-overview-link h2 { font-size: 15px; font-weight: 620; }
 .finance-panel .panel-heading p { font-size: 11px; }
+.finance-funds-chart {
+  --finance-funds-spent: #216447;
+  --finance-funds-earmarked: #d39b38;
+  --finance-funds-unallocated: #687d93;
+  --finance-funds-surface: #fff;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(20px, 5vw, 64px);
+  margin: 0;
+  padding: 2px 22px 22px;
+}
+.finance-funds-ring { display: grid; place-items: center; width: 172px; aspect-ratio: 1; border-radius: 50%; }
+.finance-funds-center {
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  width: 74%;
+  aspect-ratio: 1;
+  padding: 8px;
+  border-radius: 50%;
+  background: var(--finance-funds-surface);
+  text-align: center;
+}
+.finance-funds-center span { color: var(--muted); font-size: 11px; }
+.finance-funds-center strong { font-size: 18px; font-weight: 650; overflow-wrap: anywhere; }
+.finance-funds-legend { min-width: 0; max-width: 540px; }
+.finance-funds-legend ul { margin: 0; padding: 0; list-style: none; }
+.finance-funds-legend li {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto minmax(34px, auto);
+  align-items: center;
+  gap: 9px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+.finance-funds-legend li:last-child { border-bottom: 0; }
+.finance-funds-legend strong { text-align: right; font-weight: 620; }
+.finance-funds-percent { color: var(--muted); text-align: right; }
+.finance-funds-swatch { width: 10px; height: 10px; border-radius: 2px; }
+.finance-funds-swatch[data-funding-segment="spent"] { background: var(--finance-funds-spent); }
+.finance-funds-swatch[data-funding-segment="earmarked"] { background: var(--finance-funds-earmarked); }
+.finance-funds-swatch[data-funding-segment="unallocated"] { background: var(--finance-funds-unallocated); }
+[data-theme="dark"] .finance-funds-chart {
+  --finance-funds-surface: #1c332f;
+  --finance-funds-spent: #72be91;
+  --finance-funds-earmarked: #e2ad57;
+  --finance-funds-unallocated: #8ea5bd;
+}
 .finance-review-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; padding: 0 22px 20px; }
 .finance-review-grid h3 { font-size: 13px; font-weight: 600; margin: 0 0 5px; }
 .finance-figures { margin: 0; }
@@ -55,6 +105,8 @@
 @media (max-width: 760px) {
   .finance-cards { grid-template-columns: 1fr; gap: 8px; }
   .finance-card { padding: 13px 16px; gap: 6px; }
+  .finance-funds-chart { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .finance-funds-ring { justify-self: center; }
   .finance-review-grid { grid-template-columns: 1fr; }
   .finance-overview-link { align-items: flex-start; flex-direction: column; }
   .finance-receipt-toggle { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 14px 15px; }

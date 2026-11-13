@@ -6,7 +6,7 @@ import { dateKey, kes, totals, type Project } from '../lib/domain';
 import {
   activeFunding, amountApplied, canManageReceipts, canViewProfit, canViewReceiptLedger,
   confirmedOutflows, forecastNeedsReview, fundingCategories, fundingTotals, openCommitments,
-  receiptTotal, reviewFigures,
+  receiptFundingPosition, receiptTotal, reviewFigures, type FundingTotal,
 } from '../lib/project-finance';
 import { projectFinancials } from '../lib/suite';
 import type { ClientReceipt, Role, SuiteState } from '../lib/suite-types';
@@ -40,6 +40,47 @@ function Figures({ rows }: { rows: [string, number | null][] }) {
   return <dl className="finance-figures">{rows.map(([label, amount]) =>
     <div key={label}><dt>{label}</dt><dd>{amount === null ? '—' : kes(amount)}</dd></div>
   )}</dl>;
+}
+
+const fundingPercent = new Intl.NumberFormat('en-KE', { style: 'percent', maximumFractionDigits: 1 });
+
+function ClientFundsChart({ received, funding }: { received: number; funding: FundingTotal[] }) {
+  if (received === 0) {
+    return <p className="panel-copy">Record a client receipt to see how the funds are used.</p>;
+  }
+
+  const { spentCents, earmarkedCents, unallocatedCents } = receiptFundingPosition(received, funding);
+  if (earmarkedCents < 0 || unallocatedCents < 0) {
+    return <p className="panel-copy">Review the receipt allocations to reconcile this breakdown.</p>;
+  }
+
+  const spentEnd = spentCents / received * 100;
+  const earmarkedEnd = (received - unallocatedCents) / received * 100;
+  const segments = [
+    { key: 'spent', label: 'Linked spending', amount: spentCents },
+    { key: 'earmarked', label: 'Still earmarked', amount: earmarkedCents },
+    { key: 'unallocated', label: 'Unallocated', amount: unallocatedCents },
+  ];
+
+  return <figure className="finance-funds-chart" aria-label="Breakdown of client receipts">
+    <div className="finance-funds-ring" style={{ backgroundImage: `conic-gradient(
+      var(--finance-funds-spent) 0 ${spentEnd}%,
+      var(--finance-funds-earmarked) ${spentEnd}% ${earmarkedEnd}%,
+      var(--finance-funds-unallocated) ${earmarkedEnd}% 100%
+    )` }}>
+      <div className="finance-funds-center"><span>Total received</span><strong>{kes(received)}</strong></div>
+    </div>
+    <figcaption className="finance-funds-legend">
+      <ul>
+        {segments.map(({ key, label, amount }) => <li key={key}>
+          <span className="finance-funds-swatch" data-funding-segment={key} aria-hidden="true" />
+          <span>{label}</span>
+          <strong>{kes(amount)}</strong>
+          <span className="finance-funds-percent">{fundingPercent.format(amount / received)}</span>
+        </li>)}
+      </ul>
+    </figcaption>
+  </figure>;
 }
 
 type Props = {
@@ -189,6 +230,10 @@ export function ProjectFinance({ state, project, role, organizationId, saving, e
       </>}
       {allowLedger && <Card title="Tracked cash position" amount={received - paid} detail={kes(received) + ' received · ' + kes(paid) + ' paid out'} signed icon={<Wallet size={16} />} />}
     </section>
+
+    {allowLedger && <Panel title="Client funds" description="How recorded client receipts are used">
+      <ClientFundsChart received={received} funding={funding} />
+    </Panel>}
 
     {allowProfit && <Panel title="Profit and forecast review"
       description={review ? 'Profit cutoff ' + review.asOf + ' · forecast saved ' + dateKey(new Date(review.recordedAt)) : 'Record earned revenue, project costs and the remaining estimate.'}

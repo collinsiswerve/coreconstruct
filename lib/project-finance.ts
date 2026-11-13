@@ -132,6 +132,16 @@ export function fundingTotals(s: SuiteState, projectId: string): FundingTotal[] 
   })).filter(row => row.amountCents > 0);
 }
 
+export function receiptFundingPosition(receivedCents: number, funding: readonly FundingTotal[]) {
+  const allocatedCents = funding.reduce((sum, row) => sum + row.amountCents, 0);
+  const spentCents = funding.reduce((sum, row) => sum + row.spentCents, 0);
+  return {
+    spentCents,
+    earmarkedCents: allocatedCents - spentCents,
+    unallocatedCents: receivedCents - allocatedCents,
+  };
+}
+
 export function amountApplied(s: SuiteState, projectId: string, milestoneId: string, exceptReceiptId?: string) {
   return s.suite.receipts.filter(receipt => receipt.projectId === projectId && !receipt.voidedAt && receipt.id !== exceptReceiptId)
     .flatMap(receipt => s.suite.finance.plans[receipt.id]?.applications || [])
