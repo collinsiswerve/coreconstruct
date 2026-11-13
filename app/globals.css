@@ -60,7 +60,7 @@
   text-align: center;
 }
 .finance-funds-center span { color: var(--muted); font-size: 11px; }
-.finance-funds-center strong { font-size: 18px; font-weight: 650; overflow-wrap: anywhere; }
+.finance-funds-center strong { font-size: 15px; font-weight: 650; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .finance-funds-legend { min-width: 0; max-width: 540px; }
 .finance-funds-legend ul { margin: 0; padding: 0; list-style: none; }
 .finance-funds-legend li {

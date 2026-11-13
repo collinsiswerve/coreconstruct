@@ -2,7 +2,7 @@
 
 CoreConstruct joins design control, site operations and client reporting for a Kenyan design and construction firm. This repository contains the executable pilot, automated checks, database migrations and test guide.
 
-[Open the hosted pilot](https://coreconstruct-pilot-cis.upbeatfern7.chatgpt.site) · [Completion report](docs/COMPLETION_REPORT.md) · [Test guide](docs/PILOT_CHECKLIST.md) · [Technical notes](docs/TECHNICAL_NOTES.md)
+[Open the hosted pilot](https://coreconstruct-pilot-cis.aiarchihub.chatgpt.site) · [Completion report](docs/COMPLETION_REPORT.md) · [Test guide](docs/PILOT_CHECKLIST.md) · [Technical notes](docs/TECHNICAL_NOTES.md)
 
 The hosted pilot remains owner-private. The application supports team invitations and assigned client accounts, but those people also need permission to enter the hosted Site. An invitation does not change hosting access.
 
