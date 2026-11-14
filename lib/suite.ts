@@ -1,9 +1,17 @@
-import { applyCommand, DomainError, emptyState, moneyToCents, dateKey, addDays, monday, totals, type Command, type State } from './domain';
-import type { Actor, Brand, BoqItem, Delivery, Drawing, LocationEvidence, Module, Modules, OrderLine, ProjectDetails, SuiteData, SuiteState, Variation } from './suite-types';
+import { applyCommand, assertAfterOpening, DomainError, paidFor, emptyState, moneyToCents, dateKey, addDays, monday, totals, workerOnProject, type Command, type State } from './domain';
+import type { Actor, Brand, Delivery, Drawing, LocationEvidence, Module, Modules, OrderLine, ProjectDetails, SuiteData, SuiteState, Variation } from './suite-types';
+import { activeFunding, amountApplied, emptyFinance, linkFunding, openCommitments, receiptTotal, saveFinanceReview, saveReceiptPlan } from './project-finance';
+import { boqTotals, maxBoqRows, parseBoqLine } from './boq-import';
+import { openingBalanceFigures, parseOpeningBalances } from './opening-balances';
+import { isSupplierInvoiceCost, supplierInvoiceMatch } from './procurement';
+import { addSampleClientUpdates, clientUpdatesSampleId } from './sample-client-updates';
+import { addSampleOperations, operationsSampleId } from './sample-operations';
+import { addSampleFinance } from './sample-finance';
+import { addSampleComparisonProjects, isFinanceSample, sampleProjectCount } from './sample-projects';
 export const moduleDefaults: Modules = { design: true, boq: true, wages: true, materials: true, portal: true, variations: true };
 export const detailDefaults = (): ProjectDetails => ({ geofenceMeters: 150, lrNumber: '', county: '', clientEmail: '', clientPhone: '', clientTimezone: 'Africa/Nairobi', currency: 'KES', fxKesPerUnit: 1, fxAsOf: '', brief: '', startDate: '', estimatedCompletion: '', forecastRemainingCents: 0, managementFeeBps: 0, modules: {} });
-export const emptySuite = (): SuiteData => ({ version: 2, brand: { primary: '#216447', accent: '#b58e42', theme: 'light', logoFileId: '', kraPin: '', ncaNumber: '', address: '', phone: '', email: '', preset: 'design-build', enforceGps: true, enforceWorkerIdentity: false }, modules: { ...moduleDefaults }, projectDetails: {}, boq: [], materials: [], orders: [], deliveries: [], stock: [], invoices: [], drawings: [], acknowledgements: [], designAcceptances: [], media: [], variations: [], receipts: [], actions: [], milestones: [], sequences: { orders: 0, variations: 0, receipts: 0 }, publishedWeeks: {}, identities: {}, piecework: [], appliedPiecework: {}, commandFingerprints: {} });
-export function normalizeState(value: State | SuiteState): SuiteState { return { ...emptyState(), ...value, suite: { ...emptySuite(), ...('suite' in value ? value.suite : {}) } }; }
+export const emptySuite = (): SuiteData => ({ version: 2, finance: emptyFinance(), brand: { primary: '#216447', accent: '#b58e42', theme: 'light', logoFileId: '', kraPin: '', ncaNumber: '', address: '', phone: '', email: '', preset: 'design-build', enforceGps: true, enforceWorkerIdentity: false }, modules: { ...moduleDefaults }, projectDetails: {}, boq: [], materials: [], orders: [], deliveries: [], stock: [], invoices: [], drawings: [], acknowledgements: [], designAcceptances: [], media: [], variations: [], receipts: [], actions: [], milestones: [], sequences: { orders: 0, variations: 0, receipts: 0 }, publishedWeeks: {}, identities: {}, piecework: [], appliedPiecework: {}, commandFingerprints: {} });
+export function normalizeState(value: State | SuiteState): SuiteState { return { ...emptyState(), ...value, suite: { ...emptySuite(), ...('suite' in value ? value.suite : {}), finance: { ...emptyFinance(), ...('suite' in value ? value.suite.finance : {}) } } }; }
 export const fail = (message: string, status = 400): never => { throw new DomainError(message, status); };
 export const required = (v: unknown, name: string, max = 240): string => { const s = String(v ?? '').trim(); if (!s || s.length > max) fail(`${name} is required (maximum ${max} characters).`); return s; };
 export const optionalText = (v: unknown, max = 1000): string => String(v ?? '').trim().slice(0, max);
@@ -29,8 +37,9 @@ export function locationEvidence(details: ProjectDetails, input: unknown, at: st
 }
 export function projectFinancials(s: SuiteState, projectId: string) {
   const p = get(s.projects, projectId, 'Project'), t = totals(s, projectId), d = s.suite.projectDetails[projectId] || detailDefaults(), accepted = s.suite.variations.filter(v => v.projectId === projectId && v.status === 'accepted');
-  const contract = p.contractCents + accepted.reduce((n, v) => n + v.clientDeltaCents, 0), allowance = p.budgetCents + accepted.reduce((n, v) => n + v.internalDeltaCents, 0), receipts = s.suite.receipts.filter(r => r.projectId === projectId && !r.voidedAt).reduce((n, r) => n + r.amountCents, 0);
-  const committed = s.suite.orders.filter(o => o.projectId === projectId && o.status === 'approved').reduce((n, o) => n + o.totalCents, 0), invoiced = s.suite.invoices.filter(i => i.projectId === projectId && i.status === 'approved').reduce((n, i) => n + i.totalCents, 0), outstandingCommitment = Math.max(0, committed - invoiced), forecastRemaining = Math.max(d.forecastRemainingCents, outstandingCommitment);
+  const contract = p.contractCents + accepted.reduce((n, v) => n + v.clientDeltaCents, 0), allowance = p.budgetCents + accepted.reduce((n, v) => n + v.internalDeltaCents, 0), receipts = receiptTotal(s, projectId) + (p.opening?.clientReceivedCents ?? p.openingCash?.clientReceivedCents ?? 0);
+  const committed = s.suite.orders.filter(o => o.projectId === projectId && o.status === 'approved').reduce((n, o) => n + o.totalCents, 0);
+  const outstandingCommitment = openCommitments(s, projectId), forecastRemaining = Math.max(d.forecastRemainingCents, outstandingCommitment);
   const fee = Math.round(t.incurred * d.managementFeeBps / 10000), completionDays = accepted.filter(v => v.affectsCompletion).reduce((n, v) => n + v.days, 0);
   return { ...t, contract, allowance, clientReceived: receipts, contractBalance: contract - receipts, committed, outstandingCommitment, forecastRemaining, forecastFinalCost: t.incurred + forecastRemaining, fee, openBookClientTotal: t.incurred + fee, indicativeMargin: contract - (t.incurred + forecastRemaining), estimatedCompletion: d.estimatedCompletion ? addDays(d.estimatedCompletion, completionDays) : '' };
 }
@@ -58,12 +67,15 @@ export function executeSuite(original: State | SuiteState, command: Command, act
   const movement = (pid: string, materialId: string, qty: number, kind: SuiteData['stock'][number]['kind'], sourceId: string, reason: string, boqItemId = '') => s.suite.stock.push({ id: id(), projectId: pid, materialId, quantityMilli: qty, kind, sourceId, reason, boqItemId, at, actorId: actor.id });
   if (baseTypes.has(command.type)) {
     if(command.type==='attendance.save'&&p.boqItemId){const b=get(s.suite.boq,p.boqItemId,'BOQ work item');if(b.projectId!==p.projectId)fail('BOQ work item belongs to another project.');}
-    if (['expense.return','expense.revise'].includes(command.type) && s.suite.invoices.some(i=>i.expenseId===p.expenseId&&i.status==='approved')) fail('This cost comes from an approved supplier invoice. Reverse the invoice with a reason rather than changing its cost separately.');
-    if (command.type === 'wagebill.approve') checkSeparation((get(s.wagebills, p.billId, 'Wagebill') as unknown as { submittedById?: string }).submittedById, actor, p);
+    if (['expense.return','expense.revise'].includes(command.type)
+      && isSupplierInvoiceCost(s, get(s.expenses, p.expenseId, 'Expense'))) {
+      fail('This cost comes from an approved supplier invoice. Correct it from the supplier invoice register.');
+    }
+    if (command.type === 'wagebill.approve') checkSeparation(get(s.wagebills, p.billId, 'Wagebill').submittedById, actor, p);
     if (command.type === 'expense.approve') checkSeparation((get(s.expenses, p.expenseId, 'Expense') as unknown as { submittedById?: string }).submittedById, actor, p);
     if (command.type === 'worker.create' && s.suite.brand.enforceWorkerIdentity) fail('Create the worker with their identity through the protected worker registration form.');
     s = normalizeState(applyCommand(s, command, actor.name, at, id));
-    if (command.type === 'wagebill.submit') { const b = s.wagebills.find(b => b.projectId === p.projectId && b.weekStart === p.weekStart)!; Object.assign(b, { submittedById: actor.id }); }
+    if (command.type === 'wagebill.submit') { const b = s.wagebills.find(b => b.projectId === p.projectId && b.weekStart === p.weekStart)!; b.submittedById = actor.id; }
     if (command.type === 'expense.create' || command.type === 'expense.revise') { const e = command.type === 'expense.revise' ? get(s.expenses, p.expenseId, 'Expense') : s.expenses.at(-1)!; Object.assign(e, { submittedById: actor.id }); }
     if(command.type==='report.save')delete s.suite.publishedWeeks[String(p.projectId)+':'+String(p.weekStart)];
     if (command.type.endsWith('.approve') && p.overrideReason) { s.audit.at(-1)!.description += `; owner override: ${optionalText(p.overrideReason, 240)}`; }
@@ -96,13 +108,67 @@ export function executeSuite(original: State | SuiteState, command: Command, act
       const currency = String(p.currency || 'KES'); if (!['KES','USD','GBP','EUR'].includes(currency)) fail('Choose KES, USD, GBP or EUR.'); const fx = currency === 'KES' ? 1 : Number(p.fxKesPerUnit); if (!Number.isFinite(fx) || fx <= 0) fail('Enter a positive reference exchange rate.');
       try{new Intl.DateTimeFormat('en',{timeZone:String(p.clientTimezone||'Africa/Nairobi')});}catch{fail('Enter a valid IANA timezone, for example Africa/Nairobi.');}
       if(p.startDate&&p.estimatedCompletion&&String(p.estimatedCompletion)<String(p.startDate))fail('Estimated completion cannot precede the start date.');
-      s.suite.projectDetails[x.id] = { latitude: lat, longitude: lng, geofenceMeters: radius, lrNumber: optionalText(p.lrNumber, 120), county: optionalText(p.county, 80), clientEmail: optionalText(p.clientEmail, 120).toLowerCase(), clientPhone: optionalText(p.clientPhone, 50), clientTimezone: optionalText(p.clientTimezone, 80) || 'Africa/Nairobi', currency, fxKesPerUnit: fx, fxAsOf: currency === 'KES' ? '' : isoDate(p.fxAsOf), brief: optionalText(p.brief, 6000), startDate: isoDate(p.startDate, true), estimatedCompletion: isoDate(p.estimatedCompletion, true), forecastRemainingCents: cents(p.forecastRemaining || '0', true), managementFeeBps: Math.round(fee * 100), modules: overrides }; description = `Updated plot, brief and financial settings for ${x.name}`; break;
+      s.suite.projectDetails[x.id] = { latitude: lat, longitude: lng, geofenceMeters: radius, lrNumber: optionalText(p.lrNumber, 120), county: optionalText(p.county, 80), clientEmail: optionalText(p.clientEmail, 120).toLowerCase(), clientPhone: optionalText(p.clientPhone, 50), clientTimezone: optionalText(p.clientTimezone, 80) || 'Africa/Nairobi', currency, fxKesPerUnit: fx, fxAsOf: currency === 'KES' ? '' : isoDate(p.fxAsOf), brief: optionalText(p.brief, 6000), startDate: isoDate(p.startDate, true), estimatedCompletion: isoDate(p.estimatedCompletion, true), forecastRemainingCents: p.forecastRemaining === undefined || (actor.role !== 'admin' && actor.projectRoles[x.id] !== 'finance') ? old.forecastRemainingCents : cents(p.forecastRemaining || '0', true), managementFeeBps: Math.round(fee * 100), modules: overrides }; description = `Updated plot, brief and financial settings for ${x.name}`; break;
     }
     case 'boq.import': {
-      const x = project(); if (!Array.isArray(p.rows) || p.rows.length === 0 || p.rows.length > 500) fail('Import between 1 and 500 BOQ rows.');
-      const existing = new Set(s.suite.boq.filter(b => b.projectId === x.id).map(b => b.code.toLowerCase()));
-      const rows: BoqItem[] = (p.rows as unknown[]).map((raw: unknown) => { const r = raw as Record<string, unknown>, code = required(r.code, 'BOQ code', 40); if (existing.has(code.toLowerCase())) fail(`Duplicate BOQ code: ${code}. Imports append; existing items are never replaced silently.`); existing.add(code.toLowerCase()); return { id: id(), projectId: x.id, code, description: required(r.description, 'Description', 500), stage: required(r.stage || 'General', 'Stage', 80), unit: required(r.unit, 'Unit', 30), quantityMilli: quantity(r.quantity), clientRateCents: cents(r.clientRate || '0', true), allowanceCents: cents(r.allowance || '0', true), labourAllowanceCents: cents(r.labourAllowance || '0', true), completedMilli: 0 }; });
-      s.suite.boq.push(...rows); description = `Imported ${rows.length} BOQ items`; break;
+      const x = project();
+      const input = p.rows;
+      if (!Array.isArray(input) || input.length === 0 || input.length > maxBoqRows) {
+        throw new DomainError(`Import between 1 and ${maxBoqRows} BOQ items.`);
+      }
+      const existing = new Set(s.suite.boq.filter(item => item.projectId === x.id).map(item => item.code.toLowerCase()));
+      const rows = input.map((raw, index) => {
+        try {
+          return { ...parseBoqLine(raw, existing), id: id(), projectId: x.id };
+        } catch (error) {
+          if (!(error instanceof DomainError)) throw error;
+          throw new DomainError(`BOQ item ${index + 1}: ${error.message}`);
+        }
+      });
+      boqTotals(s.suite.boq.filter(item => item.projectId === x.id).concat(rows));
+      s.suite.boq.push(...rows);
+      const source = optionalText(p.source, 200);
+      description = `Imported ${rows.length} BOQ items${source ? ' from ' + source : ''}`;
+      break;
+    }
+    case 'opening.record': {
+      const x = project();
+      if (actor.role !== 'admin') throw new DomainError('Only the firm principal can record opening balances.', 403);
+      const previous = x.opening;
+      const revision = previous?.revision ?? 0;
+      if (p.revision !== revision) throw new DomainError('Opening balances changed. Review the current values before saving.', 409);
+      const opening = parseOpeningBalances(p, at, actor.id, revision + 1);
+      const reason = previous ? required(p.reason, 'Correction reason') : '';
+      const { asOf } = opening;
+      if (previous && previous.asOf !== asOf) throw new DomainError('Keep the original cutoff when correcting opening balances.');
+      const overlaps = s.suite.receipts.some(r => r.projectId === x.id && !r.voidedAt && r.date <= asOf)
+        || s.expenses.some(e => e.projectId === x.id && !e.opening && e.status !== 'returned' && e.date <= asOf)
+        || s.wagebills.some(b => b.projectId === x.id && b.status !== 'returned'
+          && (b.weekEnd <= asOf || !previous && b.weekStart <= asOf))
+        || s.payments.some(payment => payment.projectId === x.id && !payment.reversedAt && payment.date <= asOf)
+        || s.advances.some(advance => advance.projectId === x.id && !advance.reversedAt && advance.date <= asOf)
+        || s.suite.milestones.some(m => m.projectId === x.id && !m.opening && m.status === 'certified'
+          && dateKey(new Date(m.certifiedAt ?? m.dueDate + 'T12:00:00Z')) <= asOf);
+      if (overlaps) throw new DomainError('Existing receipts, costs or billing overlap the cutoff. Reconcile those records or choose a date before the first overlapping record.');
+      const { clientBalance, unpaidCosts } = openingBalanceFigures(opening);
+      const due = Math.max(0, clientBalance);
+      const costId = x.id + ':opening-cost';
+      const billId = x.id + ':opening-client';
+      if (paidFor(s, 'expense', costId) > unpaidCosts) throw new DomainError('The corrected unpaid cost is below payments already recorded.');
+      if (amountApplied(s, x.id, billId) > due) throw new DomainError('The corrected client balance is below receipts already applied.');
+      const existingCost = s.expenses.find(e => e.id === costId);
+      const existingBill = s.suite.milestones.find(b => b.id === billId);
+      if (existingCost) Object.assign(existingCost, { amountCents: unpaidCosts, receiptRef: opening.reference });
+      else if (unpaidCosts) s.expenses.push({ id: costId, projectId: x.id, date: asOf, description: 'Opening unpaid costs',
+        category: 'Opening balance', amountCents: unpaidCosts, receiptRef: opening.reference, receiptUrl: '', status: 'approved', approvedAt: at, opening: true });
+      if (existingBill) existingBill.amountCents = due;
+      else if (due) s.suite.milestones.push({ id: billId, projectId: x.id, title: 'Opening client balance', dueDate: asOf,
+        amountCents: due, status: 'certified', certifiedAt: at, opening: true });
+      before = { opening: previous, budgetCents: x.budgetCents };
+      if (!previous || x.budgetCents === previous.budgetCents) x.budgetCents = opening.budgetCents;
+      x.opening = opening;
+      description = previous ? 'Corrected opening balances. ' + reason : 'Recorded opening balances';
+      break;
     }
     case 'boq.progress': { const b = get(s.suite.boq, p.boqId, 'BOQ item'); projectId = b.projectId; const n = p.completed === '0' || p.completed === 0 ? 0 : quantity(p.completed); if (n > b.quantityMilli) fail('Completed quantity exceeds the baseline. Record a variation for extra work.'); before = { ...b }; b.completedMilli = n; description = `Updated measured progress for ${b.code}`; break; }
     case 'material.create': { const sku = required(p.sku, 'Material code', 40); if (s.suite.materials.some(m => m.sku.toLowerCase() === sku.toLowerCase())) fail('That material code already exists.'); s.suite.materials.push({ id: id(), sku, name: required(p.name, 'Material name', 160), unit: required(p.unit, 'Unit', 30) }); description = `Added material ${sku}`; break; }
@@ -114,7 +180,7 @@ export function executeSuite(original: State | SuiteState, command: Command, act
       const order = { id: old?.id||id(), projectId: x.id, number: old?.number||`PO-${String(++s.suite.sequences.orders).padStart(4,'0')}`, supplier: required(p.supplier, 'Supplier', 160), lines, totalCents: total, status: 'submitted' as const, submittedBy: actor.id, createdAt: at };if(old)Object.assign(old,order,{reason:undefined,approvedBy:undefined});else s.suite.orders.push(order); description = old?'Corrected and resubmitted purchase order':'Submitted a purchase order'; break;
     }
     case 'order.approve': { const o = get(s.suite.orders, p.orderId, 'Purchase order'); projectId = o.projectId; if (o.status !== 'submitted') fail('Only a submitted order can be approved.'); checkSeparation(o.submittedBy, actor, p); before = { ...o }; o.status = 'approved'; o.approvedBy = actor.id; description = `Approved ${o.number}`; break; }
-    case 'order.return': { const o = get(s.suite.orders, p.orderId, 'Purchase order'); projectId = o.projectId; if (s.suite.deliveries.some(d => d.orderId === o.id && d.status === 'approved') || s.suite.invoices.some(i => i.orderId === o.id && i.status === 'approved')) fail('An order with received goods or approved invoices cannot be returned.'); before = { ...o }; o.status = 'returned'; o.reason = required(p.reason, 'Reason'); description = `Returned ${o.number}`; break; }
+    case 'order.return': { const o = get(s.suite.orders, p.orderId, 'Purchase order'); projectId = o.projectId; if (s.suite.deliveries.some(d => d.orderId === o.id && d.status !== 'returned') || s.suite.invoices.some(i => i.orderId === o.id && i.status !== 'returned')) fail('An order with submitted or approved deliveries or invoices cannot be returned.'); before = { ...o }; o.status = 'returned'; o.reason = required(p.reason, 'Reason'); description = `Returned ${o.number}`; break; }
     case 'delivery.submit': {
       const o = get(s.suite.orders, p.orderId, 'Purchase order'); projectId = o.projectId; if (o.status !== 'approved') fail('Approve the purchase order before logging a delivery.'); const line = get(o.lines, p.lineId, 'Order line'), qty = quantity(p.quantity);
       const recorded = s.suite.deliveries.filter(d => d.orderId === o.id && d.lineId === line.id && d.status !== 'returned').reduce((n, d) => n + d.quantityMilli, 0); if (recorded + qty > line.quantityMilli) fail('This delivery exceeds the remaining order quantity.');
@@ -130,35 +196,98 @@ export function executeSuite(original: State | SuiteState, command: Command, act
       if (!['issue','wastage','adjustment','transfer'].includes(kind)) fail('Choose issue, wastage, adjustment or transfer.');
       const delta = kind === 'adjustment' && p.direction === 'in' ? qty : -qty; if (stockBalance(s, x.id, material.id) + delta < 0) fail('This would make site stock negative. Check physical stock and earlier issues.');
       let boq = ''; if (p.boqItemId) { const b = get(s.suite.boq, p.boqItemId, 'BOQ item'); if (b.projectId !== x.id) fail('Cost code belongs to another project.'); boq = b.id; }
-      if (kind === 'transfer') { const target = get(s.projects, p.targetProjectId, 'Destination project'); if (target.id === x.id) fail('Choose a different destination project.'); const tx = id(); movement(x.id, material.id, -qty, 'transfer-out', tx, reason, boq); movement(target.id, material.id, qty, 'transfer-in', tx, reason); }
+      if (kind === 'transfer') { const target = get(s.projects, p.targetProjectId, 'Destination project'); if (target.id === x.id) fail('Choose a different destination project.'); if (target.demo !== x.demo) fail('Transfers must stay within sample projects or within live projects.'); const tx = id(); movement(x.id, material.id, -qty, 'transfer-out', tx, reason, boq); movement(target.id, material.id, qty, 'transfer-in', tx, reason); }
       else movement(x.id, material.id, delta, kind as 'issue' | 'wastage' | 'adjustment', id(), reason, boq);
       description = `Recorded ${kind} of ${material.name}`; break;
     }
     case 'stock.return': { const source = get(s.suite.stock, p.movementId, 'Stock issue'); projectId = source.projectId; if (source.kind !== 'issue') fail('Returns must refer to an issue to works.'); const qty = quantity(p.quantity), returned = s.suite.stock.filter(m => m.kind === 'return' && m.sourceId === source.id).reduce((n, m) => n + m.quantityMilli, 0); if (qty + returned > -source.quantityMilli) fail('The return exceeds the quantity issued.'); movement(source.projectId, source.materialId, qty, 'return', source.id, required(p.reason,'Reason'), source.boqItemId); description = 'Returned unused materials to the store'; break; }
     case 'invoice.submit': { const o = get(s.suite.orders, p.orderId, 'Purchase order'); projectId = o.projectId; if (o.status !== 'approved') fail('The order must be approved.'); const l = get(o.lines, p.lineId, 'Order line'), ref = required(p.reference, 'Supplier invoice reference', 100); if (s.suite.invoices.some(i => i.reference.toLowerCase() === ref.toLowerCase() && s.suite.orders.find(o => o.id === i.orderId)?.supplier.toLowerCase() === o.supplier.toLowerCase())) fail('This supplier invoice reference already exists.'); const qty = quantity(p.quantity), rate = cents(p.rate); if(!Number.isSafeInteger(qty*rate))fail('Invoice amount is too large.'); s.suite.invoices.push({ id: id(), projectId, orderId: o.id, lineId: l.id, reference: ref, quantityMilli: qty, rateCents: rate, totalCents: Math.round(qty * rate / 1000), evidenceFileId: required(p.evidenceFileId,'Invoice evidence',100), status: 'submitted', submittedBy: actor.id, createdAt: at }); description = `Submitted supplier invoice ${ref}`; break; }
     case 'invoice.approve': {
-      const inv = get(s.suite.invoices, p.invoiceId, 'Invoice'); projectId = inv.projectId; if (inv.status !== 'submitted') fail('Only a submitted invoice can be approved.'); checkSeparation(inv.submittedBy, actor, p); const o = get(s.suite.orders, inv.orderId, 'Order'), line = get(o.lines, inv.lineId, 'Order line'); if (o.status !== 'approved') fail('Order is no longer approved.');
-      const received = s.suite.deliveries.filter(d => d.orderId === o.id && d.lineId === line.id && d.status === 'approved').reduce((n, d) => n + d.quantityMilli, 0), invoiced = s.suite.invoices.filter(i => i.id !== inv.id && i.orderId === o.id && i.lineId === line.id && i.status === 'approved').reduce((n, i) => n + i.quantityMilli, 0);
-      if (inv.quantityMilli + invoiced > received) fail('Three-way match failed: invoiced quantity exceeds approved goods received.'); if (inv.rateCents !== line.rateCents) fail('Three-way match failed: invoice rate differs from the approved order. Return and amend the order or invoice.');
-      before = { ...inv }; inv.status = 'approved'; inv.expenseId = id(); s.expenses.push({ id: inv.expenseId, projectId, date: dateKey(new Date(at)), description: `${o.supplier}: ${inv.reference}`, category: 'Materials', amountCents: inv.totalCents, receiptRef: inv.reference, receiptUrl: '', status: 'approved', approvedAt: at }); description = `Matched and approved ${inv.reference}; cost recorded once`; break;
+      const inv = get(s.suite.invoices, p.invoiceId, 'Invoice');
+      projectId = inv.projectId;
+      if (p.revision !== undefined && p.revision !== (inv.revision ?? 1)) {
+        throw new DomainError('The invoice changed. Review its current revision before approval.', 409);
+      }
+      if (inv.status !== 'submitted') fail('Only a submitted invoice can be approved.');
+      assertAfterOpening(get(s.projects, projectId, 'Project'), dateKey(new Date(at)));
+      checkSeparation(inv.submittedBy, actor, p);
+      const match = supplierInvoiceMatch(s, inv);
+      if (!match.order || match.issues.length) throw new DomainError(match.issues[0] || 'Choose an approved order.');
+      before = { ...inv };
+      inv.status = 'approved';
+      inv.expenseId = id();
+      s.expenses.push({
+        id: inv.expenseId, projectId, date: dateKey(new Date(at)), description: match.order.supplier + ': ' + inv.reference,
+        category: 'Materials', amountCents: inv.totalCents, receiptRef: inv.reference, receiptUrl: '', supplierInvoiceId: inv.id,
+        status: 'approved', approvedAt: at,
+      });
+      description = `Matched and approved ${inv.reference}; cost recorded once`;
+      break;
     }
-    case 'invoice.revise': {const inv=get(s.suite.invoices,p.invoiceId,'Invoice');projectId=inv.projectId;if(inv.status!=='returned')fail('Return the invoice before correcting it.');before={...inv};const qty=quantity(p.quantity),rate=cents(p.rate);if(!Number.isSafeInteger(qty*rate))fail('Invoice amount is too large.');inv.quantityMilli=qty;inv.rateCents=rate;inv.totalCents=Math.round(qty*rate/1000);if(p.evidenceFileId)inv.evidenceFileId=required(p.evidenceFileId,'Invoice evidence',100);inv.status='submitted';inv.submittedBy=actor.id;inv.reason=undefined;description=`Corrected supplier invoice ${inv.reference}`;break;}
-    case 'invoice.reverse': {const inv=get(s.suite.invoices,p.invoiceId,'Invoice');projectId=inv.projectId;if(inv.status!=='approved'||!inv.expenseId)fail('Only an approved invoice can be reversed.');if(s.payments.some(x=>x.targetId===inv.expenseId&&!x.reversedAt))fail('Reverse the confirmed payment record before reversing its invoice.');before={...inv};const reason=required(p.reason,'Reason');get(s.expenses,inv.expenseId,'Expense').status='returned';inv.status='returned';inv.reason=reason;description=`Reversed supplier invoice ${inv.reference}: ${reason}`;break;}
+    case 'invoice.revise': {
+      const inv = get(s.suite.invoices, p.invoiceId, 'Invoice');
+      projectId = inv.projectId;
+      if (inv.status !== 'returned') fail('Return the invoice before correcting it.');
+      before = { ...inv };
+      const qty = quantity(p.quantity), rate = cents(p.rate);
+      if (!Number.isSafeInteger(qty * rate)) fail('Invoice amount is too large.');
+      if (p.lineId) {
+        const order = get(s.suite.orders, inv.orderId, 'Order');
+        if (order.status !== 'approved') fail('Approve the original purchase order before resubmitting its invoice.');
+        inv.lineId = get(order.lines, p.lineId, 'Order line').id;
+      }
+      inv.revision = (inv.revision ?? 1) + 1;
+      inv.quantityMilli = qty;
+      inv.rateCents = rate;
+      inv.totalCents = Math.round(qty * rate / 1000);
+      if (p.evidenceFileId) inv.evidenceFileId = required(p.evidenceFileId, 'Invoice evidence', 100);
+      inv.status = 'submitted';
+      inv.submittedBy = actor.id;
+      inv.reason = undefined;
+      description = `Corrected supplier invoice ${inv.reference}`;
+      break;
+    }
+    case 'invoice.reverse': {const inv=get(s.suite.invoices,p.invoiceId,'Invoice');projectId=inv.projectId;if(inv.status!=='approved'||!inv.expenseId)fail('Only an approved invoice can be reversed.');if(s.payments.some(x=>x.targetId===inv.expenseId&&!x.reversedAt))fail('Reverse the confirmed payment record before reversing its invoice.');before={...inv};const reason=required(p.reason,'Reason');const cost=get(s.expenses,inv.expenseId,'Expense');cost.status='returned';cost.supplierInvoiceId=inv.id;inv.status='returned';inv.reason=reason;description=`Reversed supplier invoice ${inv.reference}: ${reason}`;break;}
     case 'invoice.return': { const inv = get(s.suite.invoices,p.invoiceId,'Invoice'); projectId=inv.projectId; if(inv.status!=='submitted') fail('Only unapproved invoices can be returned.'); before={...inv}; inv.status='returned';inv.reason=required(p.reason,'Reason');description=`Returned invoice ${inv.reference}`;break; }
     case 'drawing.add': { if(s.suite.drawings.some(d=>d.fileId===p.fileId))fail('Upload a separate file for each document revision.'); const x=project(), sheet=required(p.sheetCode,'Sheet code',60), category=required(p.category||'Design drawings','Category',80), revisions=s.suite.drawings.filter(d=>d.projectId===x.id&&d.sheetCode.toLowerCase()===sheet.toLowerCase()); s.suite.drawings.push({id:id(),projectId:x.id,title:required(p.title,'Document title',160),sheetCode:sheet,discipline:required(p.discipline||'Architectural','Discipline',60),category,revision:Math.max(0,...revisions.map(r=>r.revision))+1,status:'draft',fileId:required(p.fileId,'Document file',100),published:false,uploadedBy:actor.id,uploadedAt:at});description=`Uploaded draft ${sheet}; construction issue still requires review`;break; }
-    case 'drawing.issue': { const d=get(s.suite.drawings,p.drawingId,'Drawing');projectId=d.projectId;if(d.status!=='draft')fail('Only a draft revision can be issued.'); const latest=Math.max(...s.suite.drawings.filter(x=>x.projectId===d.projectId&&x.sheetCode.toLowerCase()===d.sheetCode.toLowerCase()).map(x=>x.revision));if(d.revision!==latest)fail('A newer draft exists. Issue the latest revision.');before=structuredClone(s.suite.drawings.filter(x=>x.projectId===d.projectId&&x.sheetCode.toLowerCase()===d.sheetCode.toLowerCase()));for(const old of s.suite.drawings)if(old.projectId===d.projectId&&old.sheetCode.toLowerCase()===d.sheetCode.toLowerCase()&&old.status==='current')old.status='superseded';d.status='current';d.issuedBy=actor.id;d.issuedAt=at;description=`Issued ${d.sheetCode} revision ${d.revision}; previous current revision superseded`;break; }
+    case 'drawing.issue': { const d=get(s.suite.drawings,p.drawingId,'Drawing');projectId=d.projectId;if(d.status!=='draft')fail('Only a draft revision can be issued.'); const latest=Math.max(...s.suite.drawings.filter(x=>x.projectId===d.projectId&&x.sheetCode.toLowerCase()===d.sheetCode.toLowerCase()).map(x=>x.revision));if(d.revision!==latest)fail('A newer draft exists. Issue the latest revision.');before=structuredClone(s.suite.drawings.filter(x=>x.projectId===d.projectId&&x.sheetCode.toLowerCase()===d.sheetCode.toLowerCase()));for(const old of s.suite.drawings)if(old.projectId===d.projectId&&old.sheetCode.toLowerCase()===d.sheetCode.toLowerCase()&&old.status==='current'){old.status='superseded';old.published=false;}d.status='current';d.issuedBy=actor.id;d.issuedAt=at;description=`Issued ${d.sheetCode} revision ${d.revision}; previous current revision superseded`;break; }
     case 'drawing.publish': { const d=get(s.suite.drawings,p.drawingId,'Drawing');projectId=d.projectId;if(d.status!=='current')fail('Only a current issued drawing can be published.');before={...d};d.published=p.published===true;description=`${d.published?'Published':'Unpublished'} ${d.sheetCode} revision ${d.revision}`;break; }
     case 'design.accept': {const d=get(s.suite.drawings,p.drawingId,'Drawing');projectId=d.projectId;if(actor.projectRoles[d.projectId]!=='client'&&actor.role!=='client')fail('Only the assigned client may record design acceptance.',403);if(d.status!=='current'||!d.published||Number(p.revision)!==d.revision)fail('Review the current published revision before accepting the design.',409);if(!s.suite.designAcceptances.some(a=>a.drawingId===d.id&&a.clientId===actor.id))s.suite.designAcceptances.push({drawingId:d.id,revision:d.revision,clientId:actor.id,clientEmail:actor.email,at});description=`Client accepted design ${d.sheetCode} revision ${d.revision}; professional issue remains a separate action`;break;}
-    case 'drawing.acknowledge': { const d=get(s.suite.drawings,p.drawingId,'Drawing');projectId=d.projectId;if(d.status!=='current')fail('Acknowledge the current revision, not a superseded drawing.');if(!s.suite.acknowledgements.some(a=>a.drawingId===d.id&&a.userId===actor.id))s.suite.acknowledgements.push({drawingId:d.id,userId:actor.id,at});description=`Acknowledged ${d.sheetCode} revision ${d.revision}`;break; }
+    case 'drawing.acknowledge': {
+      const d = get(s.suite.drawings, p.drawingId, 'Drawing');
+      projectId = d.projectId;
+      if (d.status !== 'current' || p.revision !== undefined && p.revision !== d.revision) {
+        throw new DomainError('Acknowledge the current revision, not a superseded drawing.', 409);
+      }
+      if (!s.suite.acknowledgements.some(a => a.drawingId === d.id && a.userId === actor.id)) {
+        s.suite.acknowledgements.push({ drawingId: d.id, userId: actor.id, name: actor.name, at });
+      }
+      description = `Acknowledged ${d.sheetCode} revision ${d.revision}`;
+      break;
+    }
     case 'media.capture': { const x=project(),loc=locationEvidence(s.suite.projectDetails[x.id]||detailDefaults(),p.location,at);if(s.suite.brand.enforceGps&&loc.status!=='matched'&&!loc.exceptionReason)fail('Explain missing, uncertain or outside-site location evidence.');s.suite.media.push({id:id(),projectId:x.id,fileId:required(p.fileId,'Photo or video',100),contentType:String(p.contentType||'image/jpeg'),caption:required(p.caption,'Caption',500),stage:required(p.stage||x.stage,'Stage',80),location:loc,submittedBy:actor.id,createdAt:at,published:false});description='Captured site media for review; not yet published';break; }
     case 'media.publish': {const m=get(s.suite.media,p.mediaId,'Media');projectId=m.projectId;before={...m};m.published=p.published===true;m.publishedAt=m.published?at:undefined;description=`${m.published?'Published':'Unpublished'} a reviewed progress item`;break;}
-    case 'report.publish': {const x=project(),week=isoDate(p.weekStart);const note=s.reports.find(r=>r.projectId===x.id&&r.weekStart===week);if(!note)fail('Save this week’s reporting note first.');const key=x.id+':'+week;before=s.suite.publishedWeeks[key];if(p.published===false)delete s.suite.publishedWeeks[key];else s.suite.publishedWeeks[key]=note!.updatedAt;description=`${p.published===false?'Unpublished':'Published'} weekly report for ${week}`;break;}
+    case 'report.publish': {
+      const x = project(), week = isoDate(p.weekStart);
+      const note = s.reports.find(r => r.projectId === x.id && r.weekStart === week);
+      if (!note) throw new DomainError('Save this week’s reporting note first.');
+      if (p.expectedUpdatedAt !== undefined && p.expectedUpdatedAt !== note.updatedAt) {
+        throw new DomainError('This update changed. Review the latest note before publishing.', 409);
+      }
+      const key = x.id + ':' + week;
+      before = s.suite.publishedWeeks[key];
+      if (p.published === false) delete s.suite.publishedWeeks[key];
+      else s.suite.publishedWeeks[key] = note.updatedAt;
+      description = `${p.published === false ? 'Unpublished' : 'Published'} weekly report for ${week}`;
+      break;
+    }
     case 'variation.create': case 'variation.revise': {
-      const x=project(),old=command.type==='variation.revise'?get(s.suite.variations,p.variationId,'Variation'):undefined;if(old&&(old.projectId!==x.id||!['draft','sent'].includes(old.status)))fail('Accepted, rejected or withdrawn variations cannot be rewritten.');before=old?{...old}:undefined;
+      const x=project(),old=command.type==='variation.revise'?get(s.suite.variations,p.variationId,'Variation'):undefined;if(old&&(old.projectId!==x.id||!['draft','sent'].includes(old.status)))fail('Accepted, rejected or withdrawn variations cannot be rewritten.');if(old&&p.expectedRevision!==undefined&&p.expectedRevision!==old.revision)throw new DomainError('The variation changed. Review the latest revision before saving.',409);
+      before=old?{...old}:undefined;
       const days=Number(p.days||0);if(!Number.isInteger(days)||Math.abs(days)>3650)fail('Time effect must be a whole number of days.');const affectsCompletion=p.affectsCompletion===true, programmeReason=optionalText(p.programmeReason,1000);if(affectsCompletion&&!programmeReason)fail('Explain how this change affects the project completion date.');
       const value:Variation={id:old?.id||id(),projectId:x.id,number:old?.number||`VO-${String(++s.suite.sequences.variations).padStart(4,'0')}`,title:required(p.title,'Variation title',160),description:required(p.description,'Scope',3000),revision:(old?.revision||0)+1,clientDeltaCents:signedCents(p.clientDelta),internalDeltaCents:signedCents(p.internalDelta),days,affectsCompletion,programmeReason,status:'draft',submittedBy:actor.id,createdAt:at};if(old)Object.assign(old,value,{sentAt:undefined});else s.suite.variations.push(value);description=`Saved ${value.number} revision ${value.revision}; client acceptance pending`;break;
     }
-    case 'variation.send': {const v=get(s.suite.variations,p.variationId,'Variation');projectId=v.projectId;if(v.status!=='draft')fail('Only a draft can be sent for a client decision.');v.status='sent';v.sentAt=at;description=`Sent ${v.number} revision ${v.revision} for client acceptance`;break;}
+    case 'variation.send': {const v=get(s.suite.variations,p.variationId,'Variation');projectId=v.projectId;if(v.status!=='draft')fail('Only a draft can be sent for a client decision.');if(p.revision!==undefined&&p.revision!==v.revision)throw new DomainError('The variation changed. Review the latest revision before sending.',409);v.status='sent';v.sentAt=at;description=`Sent ${v.number} revision ${v.revision} for client acceptance`;break;}
     case 'variation.withdraw': {const v=get(s.suite.variations,p.variationId,'Variation');projectId=v.projectId;if(!['draft','sent'].includes(v.status))fail('A decided variation cannot be withdrawn.');before={...v};v.status='withdrawn';v.decisionNote=required(p.reason,'Reason');description=`Withdrew ${v.number}`;break;}
     case 'variation.decide': case 'variation.recordClientDecision': {
       const v=get(s.suite.variations,p.variationId,'Variation');projectId=v.projectId;if(v.status!=='sent')fail('This variation is no longer awaiting a decision.',409);if(Number(p.revision)!==v.revision)fail('The variation version changed. Review the latest revision before deciding.',409);
@@ -167,14 +296,103 @@ export function executeSuite(original: State | SuiteState, command: Command, act
       before={...v};if(command.type==='variation.recordClientDecision'){v.externalEvidence=required(p.evidenceFileId,'Signed client decision evidence',100);v.decisionNote=required(p.decisionNote,'Client authority and decision note',1000);}
       const decision=String(p.decision);if(!['accept','reject'].includes(decision))fail('Choose accept or reject.');if(decision==='accept'){const financials=projectFinancials(s,v.projectId);if(financials.contract+v.clientDeltaCents<0||financials.allowance+v.internalDeltaCents<0)fail('An accepted reduction cannot make the contract or allowance negative.');}v.status=decision==='accept'?'accepted':'rejected';v.decisionAt=at;v.decisionBy=actor.id;v.decisionEmail=actor.email;v.approvedRevision=v.revision;description=`${decision==='accept'?'Accepted':'Rejected'} ${v.number} revision ${v.revision}${v.externalEvidence?' from recorded external client evidence':''}`;break;
     }
-    case 'receipt.issue': {const x=project(),ref=required(p.reference,'Confirmed client payment reference',100);if(s.suite.receipts.some(r=>!r.voidedAt&&r.reference.toLowerCase()===ref.toLowerCase()))fail('This client payment reference is already receipted.');const date=isoDate(p.date);if(date>dateKey(new Date(at)))fail('A receipt cannot confirm a future payment.');s.suite.receipts.push({id:id(),projectId:x.id,number:`RCP-${at.slice(0,4)}-${String(++s.suite.sequences.receipts).padStart(5,'0')}`,title:required(p.title,'Receipt title',160),amountCents:cents(p.amount),method:required(p.method,'Payment method',40),reference:ref,date,issuedAt:at,issuedBy:actor.id});description=`Issued client receipt ${s.suite.receipts.at(-1)!.number}`;break;}
-    case 'receipt.void': {const r=get(s.suite.receipts,p.receiptId,'Receipt');projectId=r.projectId;if(r.voidedAt)fail('Receipt is already void.');before={...r};r.voidedAt=at;r.reason=required(p.reason,'Reason');description=`Voided ${r.number}; receipt number retained`;break;}
+    case 'demo.portfolio.load': {
+      if (s.projects.filter(isFinanceSample).length >= sampleProjectCount) fail('The sample projects are already available.');
+      let residence = s.projects.find(isFinanceSample);
+      if (!residence) {
+        s = normalizeState(applyCommand(s, { id: command.id, type: 'demo.load', payload: {} }, actor.name, at, id));
+        residence = s.projects.at(-1)!;
+        s.commandIds.pop();
+        s.audit.pop();
+      }
+      projectId = residence.id;
+      if (!s.suite.finance.reviews[projectId] && !s.suite.receipts.some(r => r.projectId === projectId)
+        && !s.suite.milestones.some(b => b.projectId === projectId)) addSampleFinance(s, projectId, actor.id, at);
+      addSampleComparisonProjects(s, projectId, actor.id, at);
+      description = 'Loaded fictional sample projects for finance comparison';
+      break;
+    }
+    case 'demo.client-updates.load': {
+      if (actor.role !== 'admin') fail('Only the principal can load this walkthrough.', 403);
+      if (!s.suite.modules.design || !s.suite.modules.portal || !s.suite.modules.variations) {
+        fail('Enable drawings, client updates and variations to open this walkthrough.');
+      }
+      addSampleClientUpdates(s, at);
+      projectId = clientUpdatesSampleId;
+      s.suite.projectDetails[projectId] = { ...detailDefaults(), estimatedCompletion: addDays(dateKey(new Date(at)), 56) };
+      description = 'Loaded a fictional drawings and client updates walkthrough';
+      break;
+    }
+    case 'demo.operations.load': {
+      if (actor.role !== 'admin') fail('Only the principal can load this walkthrough.', 403);
+      if (!s.suite.modules.wages || !s.suite.modules.materials) {
+        fail('Enable wages and materials to open this walkthrough.');
+      }
+      addSampleOperations(s, at);
+      projectId = operationsSampleId;
+      description = 'Loaded a fictional labour and procurement walkthrough';
+      break;
+    }
+    case 'demo.finance.load': {
+      const x = project();
+      if (!x.demo) fail('Sample finance records can only be added to the sample project.');
+      if (s.suite.finance.reviews[x.id] || s.suite.receipts.some(r => r.projectId === x.id) || s.suite.milestones.some(b => b.projectId === x.id)) fail('This sample project already has finance records.');
+      addSampleFinance(s, x.id, actor.id, at);
+      description = 'Loaded fictional sample finance records';
+      break;
+    }
+    case 'finance.review.save': {
+      const x = project();
+      before = s.suite.finance.reviews[x.id];
+      s.suite.finance.reviews[x.id] = saveFinanceReview(s, x, p, at, actor.id);
+      description = 'Saved a project finance review';
+      break;
+    }
+    case 'finance.bill.record': {
+      const x = project();
+      assertAfterOpening(x, dateKey(new Date(at)));
+      const kind = p.kind;
+      if (kind !== 'fee-invoice' && kind !== 'payment-certificate') throw new DomainError('Choose an invoice or payment certificate.');
+      const reference = required(p.reference, 'Billing reference', 100);
+      if (s.suite.milestones.some(bill => bill.projectId === x.id && bill.reference?.toLowerCase() === reference.toLowerCase())) throw new DomainError('This billing reference already exists on the project.');
+      s.suite.milestones.push({ id: id(), projectId: x.id, title: required(p.title, 'Billing description', 160), kind, reference, amountCents: cents(p.amount), dueDate: isoDate(p.dueDate), status: 'certified', certifiedAt: at });
+      description = 'Recorded approved client billing item ' + reference;
+      break;
+    }
+    case 'finance.receipt.plan': {
+      const receipt = get(s.suite.receipts, p.receiptId, 'Receipt');
+      projectId = receipt.projectId;
+      before = s.suite.finance.plans[receipt.id];
+      s.suite.finance.plans[receipt.id] = saveReceiptPlan(s, receipt, p);
+      description = 'Updated billing and spending allocations for ' + receipt.number;
+      break;
+    }
+    case 'finance.funding.link': {
+      const receipt = get(s.suite.receipts, p.receiptId, 'Receipt');
+      projectId = receipt.projectId;
+      s.suite.finance.fundingLinks.push({ id: id(), receiptId: receipt.id, ...linkFunding(s, receipt, p), linkedAt: at, linkedBy: actor.id });
+      description = 'Linked confirmed spending to ' + receipt.number;
+      break;
+    }
+    case 'finance.funding.reverse': {
+      const link = get(s.suite.finance.fundingLinks, p.linkId, 'Funding link');
+      const receipt = get(s.suite.receipts, link.receiptId, 'Receipt');
+      projectId = receipt.projectId;
+      if (link.reversedAt) throw new DomainError('This funding link is already reversed.');
+      before = { ...link };
+      link.reason = required(p.reason, 'Reason for reversing the link', 240);
+      link.reversedAt = at;
+      description = 'Reversed funding link for ' + receipt.number;
+      break;
+    }
+    case 'receipt.issue': {const x=project(),ref=required(p.reference,'Confirmed client payment reference',100);if(s.suite.receipts.some(r=>!r.voidedAt&&r.reference.toLowerCase()===ref.toLowerCase()))fail('This client payment reference is already receipted.');const date=isoDate(p.date);assertAfterOpening(x,date);if(date>dateKey(new Date(at)))fail('A receipt cannot confirm a future payment.');s.suite.receipts.push({id:id(),projectId:x.id,number:`RCP-${at.slice(0,4)}-${String(++s.suite.sequences.receipts).padStart(5,'0')}`,title:required(p.title,'Receipt title',160),amountCents:cents(p.amount),method:required(p.method,'Payment method',40),reference:ref,date,issuedAt:at,issuedBy:actor.id});description=`Issued client receipt ${s.suite.receipts.at(-1)!.number}`;break;}
+    case 'receipt.void': {const r=get(s.suite.receipts,p.receiptId,'Receipt');projectId=r.projectId;if(r.voidedAt)fail('Receipt is already void.');if(activeFunding(s,r.projectId).some(link=>link.receiptId===r.id))fail('Reverse the receipt’s funding links before voiding it.');before={...r};r.voidedAt=at;r.reason=required(p.reason,'Reason');description=`Voided ${r.number}; receipt number retained`;break;}
     case 'action.create': {const x=project(),kind=String(p.kind);if(!['action','rfi','instruction','snag'].includes(kind))fail('Choose a valid record type.');s.suite.actions.push({id:id(),projectId:x.id,kind:kind as 'action',title:required(p.title,'Title',300),owner:required(p.owner,'Responsible person',100),dueDate:isoDate(p.dueDate),status:'open',createdAt:at,note:optionalText(p.note,2000)});description=`Recorded a ${kind} with an owner and due date`;break;}
     case 'action.close': {const a=get(s.suite.actions,p.actionId,'Action');projectId=a.projectId;if(a.status==='closed')fail('This action is already closed.');before={...a};a.status='closed';a.closedAt=at;a.note=required(p.note,'Closure note',2000);description=`Closed ${a.kind}: ${a.title}`;break;}
     case 'milestone.create': {const x=project();s.suite.milestones.push({id:id(),projectId:x.id,title:required(p.title,'Milestone',160),amountCents:cents(p.amount),dueDate:isoDate(p.dueDate),status:'planned'});description='Added a client billing milestone';break;}
-    case 'milestone.certify': {const m=get(s.suite.milestones,p.milestoneId,'Milestone');projectId=m.projectId;if(m.status==='certified')fail('This milestone is already certified.');before={...m};m.status='certified';m.certifiedAt=at;description=`Recorded certification of ${m.title}`;break;}
+    case 'milestone.certify': {const m=get(s.suite.milestones,p.milestoneId,'Milestone');projectId=m.projectId;if(m.status==='certified')fail('This milestone is already certified.');assertAfterOpening(get(s.projects,m.projectId,'Project'),dateKey(new Date(at)));before={...m};m.status='certified';m.certifiedAt=at;description=`Recorded certification of ${m.title}`;break;}
     case 'worker.identity.set': {const w=get(s.workers,p.workerId,'Worker'),data=p.protected as SuiteData['identities'][string];if(!data||!data.encryptedId||!data.fingerprint)fail('Identity must be processed by the protected registration endpoint.');if(Object.entries(s.suite.identities).some(([wid,x])=>wid!==w.id&&x.fingerprint===data.fingerprint))fail('This worker identity already exists in the firm.');before={idLast4:s.suite.identities[w.id]?.idLast4};s.suite.identities[w.id]={...data,verifiedBy:actor.id,verifiedAt:at};description=`Recorded encrypted identity metadata for ${w.name}; identity check remains the firm’s responsibility`;break;}
-    case 'piecework.approve': {const x=project(),w=get(s.workers,p.workerId,'Worker'),week=isoDate(p.weekStart);if(monday(week)!==week)fail('Piece-work week starts Monday.');if(s.wagebills.some(b=>b.projectId===x.id&&b.weekStart===week&&b.status!=='returned'))fail('Return the wagebill before adding piece work.');s.suite.piecework.push({id:id(),projectId:x.id,workerId:w.id,weekStart:week,description:required(p.description,'Accepted piece work',300),amountCents:cents(p.amount),approvedBy:actor.id,at});description=`Approved piece-work value for ${w.name}`;break;}
+    case 'piecework.approve': {const x=project(),w=get(s.workers,p.workerId,'Worker'),week=isoDate(p.weekStart);if(!workerOnProject(w,x))fail('Choose a worker for this project.');if(monday(week)!==week)fail('Piece-work week starts Monday.');assertAfterOpening(x,week);if(s.wagebills.some(b=>b.projectId===x.id&&b.weekStart===week&&b.status!=='returned'))fail('Return the wagebill before adding piece work.');s.suite.piecework.push({id:id(),projectId:x.id,workerId:w.id,weekStart:week,description:required(p.description,'Accepted piece work',300),amountCents:cents(p.amount),approvedBy:actor.id,at});description=`Approved piece-work value for ${w.name}`;break;}
     default: fail('Unknown operation.');
   }
   if(p.overrideReason)description+=`; owner override: ${optionalText(p.overrideReason,240)}`;

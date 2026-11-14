@@ -2,7 +2,7 @@
 
 CoreConstruct joins design control, site operations and client reporting for a Kenyan design and construction firm. This repository contains the executable pilot, automated checks, database migrations and test guide.
 
-[Open the hosted pilot](https://coreconstruct-pilot-cis.upbeatfern7.chatgpt.site) · [Completion report](docs/COMPLETION_REPORT.md) · [Test guide](docs/PILOT_CHECKLIST.md) · [Technical notes](docs/TECHNICAL_NOTES.md)
+[Open the hosted pilot](https://coreconstruct-pilot-cis.aiarchihub.chatgpt.site) · [Completion report](docs/COMPLETION_REPORT.md) · [Test guide](docs/PILOT_CHECKLIST.md) · [Technical notes](docs/TECHNICAL_NOTES.md)
 
 The hosted pilot remains owner-private. The application supports team invitations and assigned client accounts, but those people also need permission to enter the hosted Site. An invitation does not change hosting access.
 
@@ -23,7 +23,7 @@ M-Pesa payouts, bank reconciliation, WhatsApp/email delivery, eTIMS submission, 
 
 ## Start testing
 
-Use the [test guide](docs/PILOT_CHECKLIST.md) with one project and fictional inputs first. Load the sample project from the workspace if you want to explore the original labour/expense screens. The new procurement/document flows require your own test uploads and a BOQ; [sample BOQ](public/templates/boq-import.csv) is included.
+Use the [test guide](docs/PILOT_CHECKLIST.md) with one project and fictional inputs first. Load the sample project from the workspace if you want to explore the original labour/expense screens. In **Wagebills** or **Materials & store**, **Open sample walkthrough** loads fictional attendance, an advance, a delivery note and an invoice. For your own test project, [Excel BOQ template](public/templates/boq-import.xlsx) and [CSV template](public/templates/boq-import.csv) are included.
 
 Keep source code in GitHub and operational records in private storage. This repository intentionally excludes credentials, database contents, uploaded documents and exports. Its public visibility does not make your hosted workspace public.
 

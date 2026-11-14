@@ -1,0 +1,37 @@
+.preview-loading {
+  margin: 3rem auto;
+  max-width: 30rem;
+  padding: 1.25rem;
+  text-align: center;
+}
+
+.demo-return {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .85rem clamp(1rem, 4vw, 3rem);
+  background: #142e2b;
+  color: #e7f1e9;
+}
+
+.demo-return a, .demo-pilot-link:hover {
+  text-decoration: underline;
+}
+
+.pilot-note .demo-pilot-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  margin-top: .75rem;
+  font-size: 10px;
+  color: #c2ddc4;
+}
+
+.sidebar {
+  overflow-y: auto;
+}
+
+.demo-banner button {
+  white-space: nowrap;
+}
