@@ -1,0 +1,36 @@
+import{i as e,n as t,r as n}from"./index-DxLcG3b2.js";import{n as r,r as i,t as a}from"./es-mDsEfn6Y.js";import{a as o,r as s}from"./browser-s-7EQGXB.js";function c(e,n){let r=e.reports.find(e=>e.weekStart===n);if(!r)throw new t(`This weekly update is not currently published.`,404);return r}function l(t,r){let i=n(r.weekStart,6),a=t.media.filter(t=>{let n=e(new Date(t.createdAt));return n>=r.weekStart&&n<=i}).map(e=>e.caption),o=[[`Work this week`,r.summary],[`Next steps`,r.nextSteps],[`Decisions and open issues`,r.risks]];return a.length&&o.push([`Published evidence`,a.join(`
+`)]),{firm:t.firm,name:t.project.name,location:t.project.location,period:r.weekStart+` to `+i,progress:r.progress,stage:r.stage,copy:t.project.demo?`Published client update · fictional sample`:`Published client update`,sections:o}}function u(e,t){let r=l(e,t);return[[`Weekly project update`,r.copy],[`Project`,r.name],[`Firm`,r.firm],[`Location`,r.location],[`Week starting`,t.weekStart],[`Week ending`,n(t.weekStart,6)],[`Reported progress (%)`,r.progress],[`Stage`,r.stage],...r.sections.map(([e,t])=>[e,t])]}function d(e,t,n){return new Response(n.slice().buffer,{headers:{"Content-Type":t===`pdf`?`application/pdf`:`application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`,"Content-Disposition":`attachment; filename="coreconstruct-weekly-update-${e}.${t}"`,"Cache-Control":`private, no-store`,"X-Content-Type-Options":`nosniff`}})}function f(e,t){return Array.from(e.replace(/\r\n?/g,`
+`).replaceAll(`	`,` `)).map(e=>{if(e===`
+`)return e;try{return t.encodeText(e),e}catch{return`?`}}).join(``)}function p(e,t,n,r){let i=e=>t.widthOfTextAtSize(e,n)<=r;return f(e,t).split(`
+`).flatMap(e=>{let t=``,n=[];for(let r of e.trim().split(/\s+/)){let e=t?t+` `+r:r;if(i(e)){t=e;continue}t&&n.push(t),t=``;for(let e of r)t&&!i(t+e)&&(n.push(t),t=``),t+=e}return n.push(t),n})}async function m(e,t){let n=l(e,t),o=await a.create();o.setTitle(`Weekly project update · `+t.weekStart);let s=await o.embedFont(r.Helvetica),c=await o.embedFont(r.HelveticaBold),u=i(.09,.21,.17),d=i(.3,.43,.38),m=i(.82,.88,.84),[h,g]=[595.28,841.89],_=h-96,v,y=0;function b(e,t,n,r=u){v.drawText(e,{x:48,y,font:t,size:n,color:r})}function x(){v=o.addPage([h,g]),v.drawRectangle({x:0,y:g-10,width:h,height:10,color:u}),y=g-48;for(let e of p(n.firm,c,11,_))b(e,c,11),y-=15;b(f(n.copy,s),s,9,d),y-=30}function S(e,t=s,n=11,r=17,i=u){for(let a of p(e,t,n,_))y<66&&x(),b(a,t,n,i),y-=r}x(),S(`Weekly project update`,c,24,31),S(n.name,c,16,22),S(n.location+` · `+n.period,s,10,16,d),S(n.stage+` · `+n.progress+`% reported progress`,s,11,18),y-=10;for(let[e,t]of n.sections)y<110&&x(),S(e,c,12,21),S(t||`None recorded.`),y-=14;let C=o.getPages();return C.forEach((e,n)=>{e.drawLine({start:{x:48,y:52},end:{x:h-48,y:52},color:m,thickness:.7}),e.drawText(`CoreConstruct · Week starting `+t.weekStart,{x:48,y:36,size:9,font:s,color:d});let r=n+1+` / `+C.length;e.drawText(r,{x:h-48-s.widthOfTextAtSize(r,9),y:36,size:9,font:s,color:d})}),o.save()}var h=e=>Array.from(e).filter(e=>{let t=e.codePointAt(0);return t===9||t===10||t===13||t>=32&&t!==65534&&t!==65535&&(t<55296||t>57343)}).join(``).replaceAll(`&`,`&amp;`).replaceAll(`<`,`&lt;`).replaceAll(`>`,`&gt;`).replaceAll(`"`,`&quot;`).replaceAll(`\r`,`&#13;`),g=`http://schemas.openxmlformats.org/spreadsheetml/2006/main`,_=`http://schemas.openxmlformats.org/officeDocument/2006/relationships`,v=`http://schemas.openxmlformats.org/package/2006/relationships`,y=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`;function b(e){let t=[];for(let[n,r]of e){if(typeof r==`number`){t.push([n,r]);continue}let e=[],i=0,a=()=>{t.push([i===0?n:n+` (continued)`,e.join(`
+`)]),e.length=0,i++},o=0;for(let t of r.split(`
+`)){let n=Math.max(1,Math.ceil(Array.from(t).length/70));if(e.length&&o+n>22&&(a(),o=0),n>22){let n=Array.from(t);for(let t=0;t<n.length;t+=1540)e.push(n.slice(t,t+1540).join(``)),t+1540<n.length&&a();o=22}else e.push(t),o+=n}e.length&&a()}let n=t.map(([e,t],n)=>{let r=n+1,i=n===0?`1`:`2`,a=String(t).split(`
+`).reduce((e,t)=>e+Math.max(1,Math.ceil(Array.from(t).length/70)),0),o=n===0?26:Math.min(409,Math.max(20,6+15*a)),s=(e,t)=>typeof t==`number`?`<c r="${e}${r}" s="${i}"><v>${t}</v></c>`:`<c r="${e}${r}" s="${i}" t="inlineStr"><is><t xml:space="preserve">${h(t)}</t></is></c>`;return`<row r="${r}" ht="${o}" customHeight="1">${s(`A`,e)}${s(`B`,t)}</row>`}).join(``),r={"[Content_Types].xml":`<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+      <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+      <Default Extension="xml" ContentType="application/xml"/>
+      <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+      <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+      <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+    </Types>`,"_rels/.rels":`<Relationships xmlns="${v}">
+      <Relationship Id="rId1" Type="${_}/officeDocument" Target="xl/workbook.xml"/>
+    </Relationships>`,"xl/workbook.xml":`<workbook xmlns="${g}" xmlns:r="${_}">
+      <sheets><sheet name="Weekly update" sheetId="1" r:id="rId1"/></sheets>
+    </workbook>`,"xl/_rels/workbook.xml.rels":`<Relationships xmlns="${v}">
+      <Relationship Id="rId1" Type="${_}/worksheet" Target="worksheets/sheet1.xml"/>
+      <Relationship Id="rId2" Type="${_}/styles" Target="styles.xml"/>
+    </Relationships>`,"xl/styles.xml":`<styleSheet xmlns="${g}">
+      <fonts count="2"><font><sz val="11"/><color rgb="FF17372F"/><name val="Calibri"/></font>
+      <font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font></fonts>
+      <fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>
+      <fill><patternFill patternType="solid"><fgColor rgb="FF17372F"/><bgColor indexed="64"/></patternFill></fill></fills>
+      <borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
+      <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+      <cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
+      <xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
+      <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf></cellXfs>
+      <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
+    </styleSheet>`,"xl/worksheets/sheet1.xml":`<worksheet xmlns="${g}">
+      <dimension ref="A1:B${t.length}"/>
+      <cols><col min="1" max="1" width="29" customWidth="1"/><col min="2" max="2" width="79" customWidth="1"/></cols>
+      <sheetData>${n}</sheetData>
+    </worksheet>`};return o(Object.fromEntries(Object.entries(r).map(([e,t])=>[e,s(y+t)])))}async function x(e,n,r){if(r!==`pdf`&&r!==`xlsx`)throw new t(`Choose PDF or Excel.`);let i=c(e,n);return r===`pdf`?d(n,r,await m(e,i)):d(n,r,b(u(e,i)))}export{x as exportWeeklyUpdate};
