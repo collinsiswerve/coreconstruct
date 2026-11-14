@@ -18,12 +18,13 @@ The hosted pilot remains owner-private. The application supports team invitation
 - Sequential client receipts, branded PDF downloads, authenticated QR status verification, publication controls and revocable client links.
 - Versioned variations: scope, price and assessed programme impact change only when the exact sent revision is accepted.
 - Offline field drafts with attachments, account/firm scoping, deliberate sync and retained conflicts. Approvals, payment records and client decisions require a connection.
+- A weekly close checklist and project balances in **Pilot results**, with an owner-only recovery ZIP for records and uploaded files.
 
 M-Pesa payouts, bank reconciliation, WhatsApp/email delivery, eTIMS submission, government identity verification and a multi-firm commercial launch are not activated. Payment entries acknowledge references checked by your firm; they do not move money. See the completion report for the precise remaining gaps.
 
 ## Start testing
 
-Use the [test guide](docs/PILOT_CHECKLIST.md) with one project and fictional inputs first. Load the sample project from the workspace if you want to explore the original labour/expense screens. In **Wagebills** or **Materials & store**, **Open sample walkthrough** loads fictional attendance, an advance, a delivery note and an invoice. For your own test project, [Excel BOQ template](public/templates/boq-import.xlsx) and [CSV template](public/templates/boq-import.csv) are included.
+Use the [test guide](docs/PILOT_CHECKLIST.md) with one project and fictional inputs first. In [the GitHub Pages demo](https://collinsiswerve.github.io/coreconstruct/?view=pilot&v=10), go to **Pilot results → Open sample weekly close** to load fictional attendance, an advance, a delivery note and an invoice. Check the weekly approvals and the current project balances there. For your own test project, the [Excel BOQ template](public/templates/boq-import.xlsx) and [CSV template](public/templates/boq-import.csv) are included.
 
 Keep source code in GitHub and operational records in private storage. This repository intentionally excludes credentials, database contents, uploaded documents and exports. Its public visibility does not make your hosted workspace public.
 
@@ -48,4 +49,4 @@ The test suite uses Node SQLite and a private object-storage test double. It doe
 
 This is a bounded pilot, with one JSON workspace per firm and application-enforced tenant/role checks. It is not the PostgreSQL/RLS commercial architecture proposed in the original PRD. Each workspace is capped at 950 KB of serialized records; uploads are separate and capped at 8 MB each. Original drawing PDFs may contain up to 80 pages.
 
-Exports support reconciliation and manual recovery work. They are not a tested complete disaster-recovery/restore service. Attachments and the encryption key need separate recovery arrangements before larger live use.
+The principal can export a recovery ZIP under **Settings → Workspace backup**. The [recovery drill and restore instructions](docs/PILOT_CHECKLIST.md#recovery-drill) cover the supported local restore and the items managed separately.

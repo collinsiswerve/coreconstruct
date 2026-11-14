@@ -22,6 +22,35 @@ As the principal, open **Wagebills** or **Materials & store** and select **Open 
 4. In the invoice register, record a fictional KSh 1,000 payment. Check KSh 1,800 due. In **Overview**, reconcile KSh 4,300 in approved costs, KSh 2,500 in confirmed cash paid and KSh 1,800 in outstanding approved costs. Confirm the stock is six bags.
 5. Check the same workflow with separate signed-in roles in the private pilot. The owner can use the reasoned principal override on their own submissions for the sample.
 
+## M5 weekly close
+
+1. Open [Pilot results on GitHub Pages](https://collinsiswerve.github.io/coreconstruct/?view=pilot&v=10) and select **Open sample weekly close**. The checklist uses the selected reporting week. Open procurement submissions and balances show the current project position.
+2. Complete the wagebill, delivery and invoice steps above. Save and publish a note for the same week under **Weekly report**. Return to **Pilot results** and check that the wagebill is approved, the client update is published and the pending procurement queue is clear.
+3. Reconcile KSh 4,300 approved costs, KSh 2,500 confirmed cash out and KSh 1,800 still due. The approved purchase order has KSh 4,200 remaining commitment. KSh 300 of the confirmed cash was the original worker advance.
+4. For a fictional payment correction, reverse the KSh 1,000 supplier payment from its expense detail and record it with a corrected reference. The balance due should move to KSh 2,800 then back to KSh 1,800. Any funding linked to the reversed payment becomes available to allocate again. Link the corrected payment and check the original reversal in the decision history.
+5. On the private pilot, assign distinct test accounts and check project access before and after membership removal. On the intended phone, interrupt a queued delivery with a photo and delivery note, restart the browser, and select **Sync drafts** after reconnecting. Confirm one delivery and one copy of each attachment. On another device, update a queued attendance row and check **Needs review** on the first device.
+
+The release checks use fictional data, separate test identities and isolated storage. The actual Archi-Hub accounts, browser sessions and phones are acceptance steps for the controlled pilot.
+
+## Recovery drill
+
+1. As principal in the private workspace, choose **Settings → Workspace backup → Download recovery ZIP**. The archive contains the firm’s business records and original uploaded attachments with SHA-256 checksums. It supports up to 240 files and 24 MiB of combined records and attachment bytes. Keep it in private storage.
+2. From the repository root after `pnpm run build`, run the command below with a new directory and the intended recovery owner’s account details. The restore uses local D1 and R2 storage. Replace the sample values with the recovery operator’s values.
+
+   ```sh
+   pnpm run recover -- /path/to/coreconstruct-recovery.zip /path/to/new-recovery-store recovery-owner owner@example.test "Recovery Owner"
+   ```
+
+3. Compare the printed project and attachment counts. The command verifies attachment checksums in the archive and after writing each file. For a local app review, run Wrangler with the built configuration and that same recovery store. Use the local test identity assigned during restore.
+
+   ```sh
+   pnpm exec wrangler dev --config dist/server/wrangler.json --local --persist-to /path/to/new-recovery-store --ip 127.0.0.1 --inspector-port 0
+   ```
+
+4. Verify the selected week, balances, report publication, payment reversal and original uploaded files against the pre-restore project. The M5 automated drill exercises this comparison using the normal workspace and file routes against fresh storage.
+
+The recovery owner gets a new sole membership. Team access, invitations, client links and protected worker identities need separate recovery procedures. The demo drawings and field note ship with the code. Archive imported documents directly in the workspace when they need to be recovered. External receipt URLs stay as links.
+
 ## Labour, costs and payments
 
 1. Add two fictional workers at KES 1,000/day. Record one full day and one half day: expected gross is KES 1,500.

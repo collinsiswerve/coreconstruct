@@ -11,20 +11,22 @@ import { isFinanceSample, sampleProjectCount } from '../lib/sample-projects';
 import { isSupplierInvoiceCost } from '../lib/procurement';
 import { clientUpdatesSampleId } from '../lib/sample-client-updates';
 import { WeeklyDownloads } from './weekly-downloads';
+import { WeeklyClose } from './weekly-close';
+import { WorkspaceBackup } from './workspace-backup';
 import { operationsSampleId } from '../lib/sample-operations';
 import { OperationsTotals } from './operations-review';
 import { Modal, type Dialog } from './workspace-modal';
 import { SuitePanels, type SuiteView } from './suite-panels';
 import { normalizeState, enabled, projectFinancials } from '../lib/suite';
 import type { Actor, Module, SuiteState } from '../lib/suite-types';
-import { enqueue, pending, removePending, updatePending, isQueueable, saveReference, readReference, type PendingCommand, type UploadAttachment } from '../lib/offline';
+import { enqueue, pending, removePending, isQueueable, saveReference, readReference, fieldHeaders, FieldRequestError, requireFieldResponse, uploadAttachments, syncPendingDrafts, type PendingCommand, type UploadAttachment } from '../lib/offline';
 type WorkspaceResponse = { state: SuiteState; version: number; actor: Actor; organizations?: {id:string;name:string;role:string}[]; user?: { name: string; email: string }; error?: string;operationApplied?:boolean };
 type View = 'finance' | 'overview' | 'attendance' | 'wagebills' | 'expenses' | 'reports' | 'people' | 'settings' | SuiteView;
 const nav = [{ id: 'overview', label: 'Overview', icon: LayoutDashboard }, { id: 'finance', label: 'Project finance', icon: Wallet }, { id: 'site', label: 'Site & brief', icon: MapPin }, { id: 'design', label: 'Drawings & evidence', icon: FileText }, { id: 'boq', label: 'BOQ & allowances', icon: ClipboardList }, { id: 'attendance', label: 'Attendance', icon: UsersRound }, { id: 'wagebills', label: 'Wagebills', icon: Wallet }, { id: 'expenses', label: 'Expenses', icon: ReceiptText }, { id: 'materials', label: 'Materials & store', icon: Building2 }, { id: 'variations', label: 'Variations', icon: FileText }, { id: 'reports', label: 'Weekly report', icon: BarChart3 }, { id: 'client-portal', label: 'Client trust portal', icon: ShieldCheck }] as const;
 function download(name: string, body: string, type: string) { const url = URL.createObjectURL(new Blob([body], { type })); const a = document.createElement('a'); a.href = url; a.download = name; a.click(); URL.revokeObjectURL(url); }
 function initialView(demo: boolean | undefined): View {
   const query = demo ? new URLSearchParams(window.location.search).get('view') : null;
-  return query === 'finance' || query === 'boq' || query === 'wagebills' || query === 'materials' || query === 'design' || query === 'reports' || query === 'variations' ? query : 'overview';
+  return query === 'finance' || query === 'boq' || query === 'wagebills' || query === 'materials' || query === 'design' || query === 'reports' || query === 'variations' || query === 'pilot' ? query : 'overview';
 }
 export default function Workspace() {
   const { request: fetch, href, demo } = useWorkspaceRuntime();
@@ -32,6 +34,8 @@ export default function Workspace() {
   const [view, setView] = useState<View>(() => initialView(!!demo)), [projectId, setProjectId] = useState(''), [week, setWeek] = useState(monday()), [search, setSearch] = useState(''), [dialog, setDialog] = useState<Dialog>(null), [menu, setMenu] = useState(false), [clientCopy, setClientCopy] = useState(false), [user, setUser] = useState({ name: 'Workspace owner', email: '' });
   const [actor,setActor]=useState<Actor|null>(null),[organizations,setOrganizations]=useState<{id:string;name:string;role:string}[]>([]),[online,setOnline]=useState(true),[outbox,setOutbox]=useState<PendingCommand[]>([]),[syncing,setSyncing]=useState(false);
   const orgRef=useRef(''), pendingBody=useRef(''),pendingOperation=useRef<Command|null>(null),pendingAttachments=useRef<UploadAttachment[]>([]);
+  const pendingScope = useRef<Actor | null>(null);
+  const refreshSequence = useRef(0);
   const inflight = useRef(false), requestKey = useRef<string | null>(null);
   const project = state.projects.find(p => p.id === projectId) || state.projects[0], selected = project?.id || '', end = addDays(week, 6);
   const role=actor?.role==='admin'?'admin':actor?.projectRoles[selected]||actor?.role||'client', office=['admin','pm'].includes(role), canFinance=office&&online;
@@ -55,19 +59,92 @@ export default function Workspace() {
   const updatePublished = !!reportingNote && state.suite.publishedWeeks[selected + ':' + week] === reportingNote.updatedAt;
   const clientUpdateEndpoint = '/api/client-view?' + new URLSearchParams({ projectId: selected, org: actor?.organizationId || '' });
   const audit = state.audit.filter(a => !a.projectId || a.projectId === selected).slice().reverse();
-  async function refresh() {
-    setError('');
-    try { let r=await fetch('/api/workspace'+(requestKey.current?'?operationId='+encodeURIComponent(requestKey.current):''),{cache:'no-store',headers:orgRef.current?{'x-organization-id':orgRef.current}:{}});if(r.status===403&&orgRef.current){orgRef.current='';r=await fetch('/api/workspace'+(requestKey.current?'?operationId='+encodeURIComponent(requestKey.current):''),{cache:'no-store'});}const data=await r.json() as WorkspaceResponse;if(!r.ok)throw new Error(data.error||'Unable to open the workspace.');
-      if(requestKey.current&&data.operationApplied){requestKey.current=null;pendingBody.current='';pendingOperation.current=null;pendingAttachments.current=[];setDialog(null);setToast('The previous save is confirmed on the server.');}
-      const next=normalizeState(data.state);setState(next);setActor(data.actor);orgRef.current=data.actor.organizationId;localStorage.setItem('cc-organization',orgRef.current);if(data.organizations)setOrganizations(data.organizations);if(data.user)setUser(data.user);setOnline(true);
-      const key=data.actor.id+':'+data.actor.organizationId;sessionStorage.setItem('cc-field-session',key);
-      const reference=normalizeState(emptyState());reference.firm=next.firm;reference.projects=next.projects.map(p=>({...p,budgetCents:0,contractCents:0,opening:undefined,openingCash:undefined}));reference.workers=next.workers;reference.suite.boq=next.suite.boq.map(b=>({...b,clientRateCents:0,allowanceCents:0,labourAllowanceCents:0}));reference.attendance=next.attendance.filter(a=>a.date>=addDays(dateKey(),-14));reference.suite.brand=next.suite.brand;reference.suite.modules=next.suite.modules;reference.suite.projectDetails=Object.fromEntries(Object.entries(next.suite.projectDetails).map(([id,d])=>[id,{...d,forecastRemainingCents:0,managementFeeBps:0,clientPhone:'',clientEmail:'',brief:''}]));reference.suite.orders=next.suite.orders.filter(o=>o.status==='approved');reference.suite.drawings=next.suite.drawings.filter(d=>d.status==='current');
-      await saveReference(key,{state:reference,actor:data.actor,user:data.user});setOutbox(await pending(data.actor.id,data.actor.organizationId));
-    }catch(e){setError(e instanceof Error?e.message:'Unable to connect.');if(!demo && !navigator.onLine){setOnline(false);const key=sessionStorage.getItem('cc-field-session');if(key){const cached=await readReference<{state:SuiteState;actor:Actor;user:{name:string;email:string}}>(key);if(cached){setState(cached.state);setActor(cached.actor);setUser(cached.user);orgRef.current=cached.actor.organizationId;setOutbox(await pending(cached.actor.id,cached.actor.organizationId));setError('Offline reference view. Financial totals are unavailable. Site drafts can be saved to the offline inbox.');}}}}
-    finally{setLoading(false);}
+  function clearSave() {
+    requestKey.current = null;
+    pendingBody.current = '';
+    pendingOperation.current = null;
+    pendingAttachments.current = [];
+    pendingScope.current = null;
   }
-  async function uploadAttachments(payload:Record<string,unknown>,attachments:UploadAttachment[],scope:string){for(const a of attachments){if(!a.uploadedId){const form=new FormData();form.set('file',a.file,a.name);form.set('projectId',a.category==='branding'?'':String(payload.projectId||''));form.set('category',a.category);form.set('location',JSON.stringify(a.location||{}));const r=await fetch('/api/files',{method:'POST',headers:{'x-organization-id':scope},body:form}),v=await r.json() as {file:{id:string};error?:string};if(!r.ok)throw new Error(v.error||'Evidence upload failed.');a.uploadedId=v.file.id;}payload[a.field]=a.uploadedId;}}
-  async function syncInbox(){if(!actor||inflight.current||!navigator.onLine)return;inflight.current=true;setSyncing(true);setSaving(true);try{for(const item of await pending(actor.id,actor.organizationId)){if(item.status==='needs-review')continue;try{await uploadAttachments(item.command.payload,item.attachments,item.organizationId);await updatePending(item);const r=await fetch('/api/workspace',{method:'POST',headers:{'Content-Type':'application/json','x-organization-id':item.organizationId},body:JSON.stringify(item.command)}),v=await r.json() as WorkspaceResponse;if(!r.ok){if(r.status>=500)throw new Error(v.error||'Server unavailable.');item.status='needs-review';item.error=v.error||'Review this draft.';await updatePending(item);continue;}setState(normalizeState(v.state));await removePending(item.key);}catch{break;}}setOutbox(await pending(actor.id,actor.organizationId));await refresh();}finally{inflight.current=false;setSyncing(false);setSaving(false);}}
+  async function refresh() {
+    const sequence = ++refreshSequence.current;
+    const scope = pendingScope.current;
+    const operationId = requestKey.current;
+    setError('');
+    try {
+      const path = '/api/workspace' + (scope && operationId ? '?operationId=' + encodeURIComponent(operationId) : '');
+      const headers: Record<string,string> = scope ? fieldHeaders(scope) : orgRef.current ? {'x-organization-id':orgRef.current} : {};
+      let r = await fetch(path,{cache:'no-store',headers});
+      if(r.status===403 && orgRef.current && !scope)r=await fetch('/api/workspace',{cache:'no-store'});
+      const data=await r.json() as WorkspaceResponse;
+      if (sequence !== refreshSequence.current) return;
+      if (!r.ok) {
+        if (r.status === 401 || r.status === 403) {
+          sessionStorage.removeItem('cc-field-session');
+          setActor(null);setOutbox([]);setState(normalizeState(emptyState()));setDialog(null);
+        }
+        throw new Error(data.error||'Unable to open the workspace.');
+      }
+      if(operationId===requestKey.current&&data.operationApplied&&scope?.id===data.actor.id&&scope.organizationId===data.actor.organizationId){
+        clearSave();setDialog(null);setToast('The previous save is confirmed on the server.');
+      }
+      const next=normalizeState(data.state);setState(next);setActor(data.actor);orgRef.current=data.actor.organizationId;localStorage.setItem('cc-organization',orgRef.current);if(data.organizations)setOrganizations(data.organizations);if(data.user)setUser(data.user);setOnline(true);
+      if (demo) return;
+      const key=data.actor.id+':'+data.actor.organizationId;
+      sessionStorage.removeItem('cc-field-session');
+      const reference=normalizeState(emptyState());
+      reference.firm=next.firm;
+      reference.projects=next.projects.map(p=>({...p,budgetCents:0,contractCents:0,opening:undefined,openingCash:undefined,summary:undefined,nextSteps:undefined,risks:undefined}));
+      // Keep the row version inputs used by attendance and the rate used at capture.
+      reference.workers=next.workers;
+      reference.attendance=next.attendance.filter(a=>a.date>=addDays(dateKey(),-14));
+      reference.suite.boq=next.suite.boq.map(b=>({...b,clientRateCents:0,allowanceCents:0,labourAllowanceCents:0}));
+      reference.suite.brand=next.suite.brand;reference.suite.modules=next.suite.modules;
+      reference.suite.projectDetails=Object.fromEntries(Object.entries(next.suite.projectDetails).map(([id,d])=>[id,{...d,forecastRemainingCents:0,managementFeeBps:0,clientPhone:'',clientEmail:'',brief:''}]));
+      reference.suite.orders=next.suite.orders.filter(o=>o.status==='approved').map(o=>({...o,totalCents:0,lines:o.lines.map(line=>({...line,rateCents:0}))}));
+      reference.suite.materials=next.suite.materials;
+      reference.suite.drawings=next.suite.drawings.filter(d=>d.status==='current');
+      try {
+        await saveReference(key,{state:reference,actor:data.actor,user:data.user});
+        const drafts = await pending(data.actor.id,data.actor.organizationId);
+        if (sequence === refreshSequence.current) {
+          sessionStorage.setItem('cc-field-session',key);
+          setOutbox(drafts);
+        }
+      } catch {
+        if (sequence === refreshSequence.current) setError('This browser could not store offline reference data or load drafts.');
+      }
+    }catch(e){
+      if(sequence!==refreshSequence.current)return;
+      setError(e instanceof Error?e.message:'Unable to connect.');
+      if (!demo && !navigator.onLine) {
+        setOnline(false);
+        const key=sessionStorage.getItem('cc-field-session');
+        if (key) {
+          const cached=await readReference<{state:SuiteState;actor:Actor;user:{name:string;email:string}}>(key).catch(()=>null);
+          if(cached){
+            const drafts = await pending(cached.actor.id,cached.actor.organizationId).catch(()=>[]);
+            if(sequence!==refreshSequence.current)return;
+            setState(cached.state);setActor(cached.actor);if(cached.user)setUser(cached.user);
+            orgRef.current=cached.actor.organizationId;setOutbox(drafts);
+            setError('Offline reference view. Financial totals are unavailable. Site drafts can be saved to the offline inbox.');
+          }
+        }
+      }
+    }finally{if(sequence===refreshSequence.current)setLoading(false);}
+  }
+  async function syncInbox() {
+    if (!actor || inflight.current || requestKey.current || !navigator.onLine) return;
+    inflight.current=true;setSyncing(true);setSaving(true);
+    try {
+      const result = await syncPendingDrafts(fetch, actor);
+      await refresh();
+      if (result.stopped) setError(result.stopped + ' Unconfirmed drafts are still in the offline inbox.');
+      if (result.saved || result.needsReview) setToast(`${result.saved} synced · ${result.needsReview} need review`);
+    } catch {
+      setError('This browser could not read or update the offline inbox.');
+    } finally {inflight.current=false;setSyncing(false);setSaving(false);}
+  }
 
   useEffect(() => { orgRef.current=localStorage.getItem('cc-organization')||'';setOnline(!!demo || navigator.onLine);const saved = localStorage.getItem('cc-pilot-project'); if (saved) setProjectId(saved); void refresh(); }, []);
   useEffect(()=>{const up=()=>{setOnline(true);void refresh();},down=()=>setOnline(!!demo);window.addEventListener('online',up);window.addEventListener('offline',down);if(!demo && 'serviceWorker'in navigator)void navigator.serviceWorker.register('/sw.js').catch(()=>{});return()=>{window.removeEventListener('online',up);window.removeEventListener('offline',down);};},[]);
@@ -75,21 +152,35 @@ export default function Workspace() {
   useEffect(() => { if (projectId) localStorage.setItem('cc-pilot-project', projectId); }, [projectId]);
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(''), 4500); return () => clearTimeout(timer); }, [toast]);
   useEffect(() => { if (!dialog) return; const handler = (e: KeyboardEvent) => { if (e.key === 'Escape' && !inflight.current) setDialog(null); }; document.addEventListener('keydown', handler); return () => document.removeEventListener('keydown', handler); }, [dialog]);
-  async function command(type:string,payload:Record<string,unknown>,message='Saved to your workspace.',attachments:UploadAttachment[]=[]) {
-    if(inflight.current)return false;
+  async function command(type:string,payload:Record<string,unknown>,message='Saved to your workspace.',attachments:UploadAttachment[]=[], destination?: 'pilot') {
+    const scope = pendingScope.current || actor;
+    if(inflight.current||!scope)return false;
     if(['wagebill.approve','expense.approve'].includes(type)&&actor?.role==='admin'&&!payload.overrideReason){const record=type==='wagebill.approve'?state.wagebills.find(b=>b.id===payload.billId):state.expenses.find(e=>e.id===payload.expenseId);if((record as unknown as {submittedById?:string})?.submittedById===actor.id){open('approval-override',{type,payload});return false;}}
-    if(type==='attendance.save'){const a=state.attendance.find(a=>a.projectId===payload.projectId&&a.workerId===payload.workerId&&a.date===payload.date);payload.expectedToken=a?JSON.stringify([a.id,a.units,a.rateCents,a.task]):'';}
-    if(type==='attendance.remove'){const a=state.attendance.find(a=>a.id===payload.attendanceId);payload.expectedToken=a?JSON.stringify([a.id,a.units,a.rateCents,a.task]):'';}
+    if(type==='attendance.save'&&payload.expectedToken===undefined){const a=state.attendance.find(a=>a.projectId===payload.projectId&&a.workerId===payload.workerId&&a.date===payload.date);payload.expectedToken=a?JSON.stringify([a.id,a.units,a.rateCents,a.task]):'';}
+    if(type==='attendance.remove'&&payload.expectedToken===undefined){const a=state.attendance.find(a=>a.id===payload.attendanceId);payload.expectedToken=a?JSON.stringify([a.id,a.units,a.rateCents,a.task]):'';}
     const intended=JSON.stringify({type,payload});if(requestKey.current&&pendingBody.current&&pendingBody.current!==intended){setError('The previous save has an unresolved result. Retry its original values first, or refresh and check the record before starting another entry.');return false;}
     inflight.current=true;setSaving(true);setError('');const id=requestKey.current||crypto.randomUUID();requestKey.current=id;pendingBody.current=intended;
-    const operation:Command=pendingOperation.current||{id,type,payload:{...payload}};if(pendingOperation.current)attachments=pendingAttachments.current;else{pendingOperation.current=operation;pendingAttachments.current=attachments;}
-    async function queue(){if(!actor||!isQueueable(type))throw new Error('This action requires an online connection.');const item:PendingCommand={key:actor.id+':'+actor.organizationId+':'+id,userId:actor.id,organizationId:actor.organizationId,command:operation,attachments,queuedAt:new Date().toISOString(),status:'pending'};await enqueue(item);setOutbox(await pending(actor.id,actor.organizationId));requestKey.current=null;pendingBody.current='';pendingOperation.current=null;pendingAttachments.current=[];setToast('Draft saved to the offline inbox. It is not yet on the server.');setDialog(null);return true;}
+    const operation:Command=pendingOperation.current||{id,type,payload:{...payload}};if(pendingOperation.current)attachments=pendingAttachments.current;else{pendingOperation.current=operation;pendingAttachments.current=attachments;pendingScope.current=scope;}
+    async function queue(draftScope: Actor){
+      if(!isQueueable(type))throw new Error('This action requires an online connection.');
+      const {id:userId,organizationId}=draftScope;
+      const item:PendingCommand={key:userId+':'+organizationId+':'+id,userId,organizationId,command:operation,attachments,queuedAt:new Date().toISOString(),status:'pending'};
+      await enqueue(item);setOutbox(await pending(userId,organizationId));clearSave();
+      setToast('Draft saved to the offline inbox. It is not yet on the server.');setDialog(null);return true;
+    }
     try{
-      if(!demo && !navigator.onLine){setOnline(false);return await queue();}
-      await uploadAttachments(operation.payload,attachments,orgRef.current);
-      const r=await fetch('/api/workspace',{method:'POST',headers:{'Content-Type':'application/json','x-organization-id':orgRef.current},body:JSON.stringify(operation)}),data=await r.json() as WorkspaceResponse;
-      if(!r.ok){if(r.status<500){requestKey.current=null;pendingBody.current='';pendingOperation.current=null;pendingAttachments.current=[];}if(r.status===409)await refresh();throw new Error(data.error||'The record could not be saved.');}
-      setState(normalizeState(data.state));if(data.actor)setActor(data.actor);requestKey.current=null;pendingBody.current='';pendingOperation.current=null;pendingAttachments.current=[];
+      if(!demo && !navigator.onLine){
+        setOnline(false);
+        if(!isQueueable(type)){clearSave();throw new Error('This action requires an online connection.');}
+        return await queue(scope);
+      }
+      await uploadAttachments(fetch,operation,attachments,scope);
+      const r=await fetch('/api/workspace',{method:'POST',headers:{'Content-Type':'application/json',...fieldHeaders(scope)},body:JSON.stringify(operation)});
+      await requireFieldResponse(r,'The record could not be saved.');
+      const data = await r.json() as WorkspaceResponse;
+      if(data.actor?.id!==scope.id||data.actor.organizationId!==scope.organizationId)throw new Error('The save has not been confirmed.');
+      refreshSequence.current++;
+      setState(normalizeState(data.state));setActor(data.actor);clearSave();
       if (type === 'demo.portfolio.load') {
         const firstSample = data.state.projects.find(isFinanceSample);
         if (firstSample) setProjectId(firstSample.id);
@@ -98,7 +189,7 @@ export default function Workspace() {
         const date = data.state.attendance.find(row => row.projectId === operationsSampleId)?.date;
         if (date) setWeek(monday(date));
         setProjectId(operationsSampleId);
-        go('wagebills');
+        go(destination || 'wagebills');
       } else if (type === 'demo.client-updates.load') {
         const note = data.state.reports.find(item => item.id === clientUpdatesSampleId + ':report');
         if (note) setWeek(note.weekStart);
@@ -109,7 +200,15 @@ export default function Workspace() {
         if (created) setProjectId(created.id);
       }
       setToast(message);setDialog(null);return true;
-    }catch(e){if(!demo && !navigator.onLine&&isQueueable(type)){try{return await queue();}catch(q){setError(q instanceof Error?q.message:'The offline draft could not be stored. Keep the form open.');return false;}}setError(e instanceof Error?e.message:'The record could not be saved.');return false;}
+    }catch(e){
+      if (e instanceof FieldRequestError && !e.retryable) {
+        clearSave();
+        await refresh();
+      } else if(!demo && !navigator.onLine&&isQueueable(type)){
+        try{return await queue(scope);}catch(q){setError(q instanceof Error?q.message:'The offline draft could not be stored. Keep the form open.');return false;}
+      }
+      setError(e instanceof Error?e.message:'The record could not be saved.');return false;
+    }
     finally{inflight.current=false;setSaving(false);}
   }
 
@@ -117,14 +216,14 @@ export default function Workspace() {
   function loadSampleProjects() {
     return command('demo.portfolio.load', {}, 'Sample projects are ready to compare.');
   }
-  function openOperationsSample() {
+  function openOperationsSample(destination: 'wagebills' | 'pilot' = 'wagebills') {
     if (!operationsSample) {
-      void command('demo.operations.load', {}, 'Sample wage and procurement records are ready.');
+      void command('demo.operations.load', {}, 'Sample wage and procurement records are ready.', [], destination === 'pilot' ? destination : undefined);
       return;
     }
     setProjectId(operationsSample.id);
     if (sampleWeek) setWeek(sampleWeek);
-    go('wagebills');
+    go(destination);
   }
   function openClientUpdatesSample() {
     if (!updatesSample) {
@@ -140,8 +239,8 @@ export default function Workspace() {
     setClientCopy(true);
     go('reports');
   }
-  function open(kind: string, data?: Record<string, unknown>) { if(requestKey.current){setError('A save has an unresolved result. Retry the original form or refresh to confirm it before opening another entry.');return;}pendingOperation.current=null;pendingAttachments.current=[]; requestKey.current = null; pendingBody.current=''; setError(''); setDialog({ kind, data }); }
-  function backup() { download(`coreconstruct-backup-${dateKey()}.json`, JSON.stringify({ exportedAt: new Date().toISOString(), workspace: state }, null, 2), 'application/json'); setToast('Backup downloaded. Keep it in a secure folder.'); }
+  function open(kind: string, data?: Record<string, unknown>) { if(requestKey.current){setError('A save has an unresolved result. Retry the original form or refresh to confirm it before opening another entry.');return;}setError('');setDialog({ kind, data }); }
+  function backup() { download(`coreconstruct-backup-${dateKey()}.json`, JSON.stringify({ exportedAt: new Date().toISOString(), workspace: state }, null, 2), 'application/json'); setToast('Records exported. Keep the file in a private folder.'); }
   function exportCsv(kind: string) {
     let rows: unknown[][] = [];
     if (kind === 'attendance') rows = [['Date', 'Worker', 'Days', 'Daily rate KES', 'Cost KES', 'Task'], ...attendance.map(a => [a.date, state.workers.find(w => w.id === a.workerId)?.name, a.units / 2, (a.rateCents / 100).toFixed(2), (Math.round(a.rateCents * a.units / 2) / 100).toFixed(2), a.task])];
@@ -163,13 +262,13 @@ export default function Workspace() {
   </aside>{menu && <button className="sidebar-shade" onClick={() => setMenu(false)} aria-label="Close navigation" />}
   <div className="main-shell"><header className="topbar"><div><button className="icon-button mobile-menu" onClick={() => setMenu(!menu)} aria-label="Open navigation"><Menu size={21} /></button><span className="breadcrumb">Workspace <ChevronRight size={13} /><strong>{title}</strong></span></div><div className="topbar-right">{demo && <select className="finance-role-select" aria-label="Preview role" value={demo.role} onChange={event => demo.switchRole(event.target.value, selected, view)}>
     <option value="admin">Principal</option><option value="finance">Finance reviewer</option><option value="accounts">Accounts</option><option value="pm">PM / QS</option><option value="foreman">Site foreman</option><option value="client" disabled={!selected}>Client</option>
-  </select>}{organizations.length>1&&<select aria-label="Firm workspace" className="firm-switch" value={actor?.organizationId||''} onChange={e=>{orgRef.current=e.target.value;localStorage.setItem('cc-organization',e.target.value);setProjectId('');go('overview');void refresh();}}>{organizations.map(o=><option key={o.id} value={o.id}>{o.id===actor?.organizationId?state.firm:o.name}</option>)}</select>}<span className="save-state"><i className={error ? 'warning-dot' : ''} />{saving ? 'Saving…' : !online?'Offline drafts':error ? 'Review the message' : demo ? 'Saved in this browser' : 'Private workspace'}</span><span className="pilot-pill">{demo ? 'PUBLIC DEMO' : 'PILOT 01'}</span>{!demo && <button className="icon-button" onClick={() => open('guide')} aria-label="Open quick guide"><CircleHelp size={19} /></button>}</div></header>
+  </select>}{organizations.length>1&&<select aria-label="Firm workspace" className="firm-switch" disabled={!online||saving||!!requestKey.current} value={actor?.organizationId||''} onChange={e=>{orgRef.current=e.target.value;localStorage.setItem('cc-organization',e.target.value);sessionStorage.removeItem('cc-field-session');setActor(null);setState(normalizeState(emptyState()));setOutbox([]);setDialog(null);setLoading(true);setProjectId('');go('overview');void refresh();}}>{organizations.map(o=><option key={o.id} value={o.id}>{o.id===actor?.organizationId?state.firm:o.name}</option>)}</select>}<span className="save-state"><i className={error ? 'warning-dot' : ''} />{saving ? 'Saving…' : !online?'Offline drafts':error ? 'Review the message' : demo ? 'Saved in this browser' : 'Private workspace'}</span><span className="pilot-pill">{demo ? 'PUBLIC DEMO' : 'PILOT 01'}</span>{!demo && <button className="icon-button" onClick={() => open('guide')} aria-label="Open quick guide"><CircleHelp size={19} /></button>}</div></header>
   <main><div className="page-heading"><div><div className="eyebrow">{new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Africa/Nairobi' })}</div><h1>{title}<span className="title-dot">.</span></h1><p>{desc}</p></div><div className="heading-actions">{view === 'overview' && office && <button className="btn" onClick={() => go('reports')}><FileText size={16} />View report</button>}<button hidden={view==='finance'||(!office&&!['attendance','expenses','people'].includes(view))} className="btn primary" onClick={() => open(!project ? 'project' : view === 'attendance' ? 'attendance' : view === 'expenses' ? 'expense' : view === 'people' ? 'worker' : 'quick')}><Plus size={17} />{!project ? 'Create project' : view === 'attendance' ? 'Record attendance' : view === 'expenses' ? 'Add expense' : view === 'people' ? 'Add worker' : 'New entry'}</button></div></div>
   {error && <div className="notice error" role="alert"><AlertCircle size={18} /><span>{error}</span>{!demo && <a href="/signin-with-chatgpt?return_to=/" target="_top" className="text-button">Sign in</a>}<button onClick={() => void refresh()}>Refresh</button>{requestKey.current&&<button onClick={()=>{const original=JSON.parse(pendingBody.current);void command(original.type,original.payload,'Previous save confirmed.',pendingAttachments.current);}}>Retry previous save</button>}</div>}
   {loading ? <div className="loading"><LoaderCircle className="spin" size={26} /><p>Opening your workspace…</p></div> : <>
     <div className="project-bar"><div className="project-selection"><span className="project-icon"><Building2 size={19} /></span><label><small>ACTIVE PROJECT</small><select aria-label="Active project" value={selected} onChange={e => setProjectId(e.target.value)}>{!state.projects.length && <option value="">No project yet</option>}{state.projects.map(p => <option key={p.id} value={p.id}>{p.name}{p.demo ? ' · sample' : ''}</option>)}</select></label>{role==='admin'&&<button className="icon-button" onClick={() => open('project')} aria-label="Add another project"><Plus size={16} /></button>}{project && <span className="location"><MapPin size={13} />{project.location}</span>}</div>{view!=='finance'&&<div className="week-picker"><button className="icon-button" onClick={() => setWeek(addDays(week, -7))} aria-label="Previous week"><ChevronRight className="flip" size={16} /></button><CalendarDays size={15} /><span>{displayDate(week)} – {displayDate(end)}</span><button className="icon-button" onClick={() => setWeek(addDays(week, 7))} aria-label="Next week"><ChevronRight size={16} /></button><button className="text-button" onClick={() => setWeek(monday())}>This week</button></div>}</div>
     {project?.demo && <div className="demo-banner"><Sparkles size={15} /><span><strong>Sample project.</strong> {demo ? 'Try the workflows using fictional data. Entries and attachments stay in this browser.' : 'These fictional records let you explore the complete workflow.'}</span>{demo ? <button onClick={() => {if(window.confirm('Reset the demo and clear your browser’s demo changes?'))void demo.reset();}}>Reset demo</button> : <button onClick={() => open('project')}>Start your own <ArrowRight size={13} /></button>}</div>}
-    {outbox.length>0&&<section className="offline-inbox"><div><strong>{outbox.length} site draft{outbox.length===1?'':'s'} on this device</strong><p>Pending drafts are not server-approved records. Conflicts stay here for review.</p></div><button className="btn primary" disabled={!online||saving} onClick={()=>void syncInbox()}>{syncing?'Syncing…':'Sync drafts'}</button><button className="btn" onClick={()=>download('coreconstruct-offline-drafts-'+dateKey()+'.json',JSON.stringify(outbox.map(i=>({...i,attachments:i.attachments.map(a=>({name:a.name,field:a.field,category:a.category,uploadedId:a.uploadedId}))})),null,2),'application/json')}>Export draft details</button>{outbox.filter(i=>i.status==='needs-review').map(i=><article key={i.key} className="offline-conflict"><p>{i.command.type}: {i.error}. Review the latest record before creating a corrected entry.</p><details><summary>Review queued values</summary><pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{JSON.stringify(i.command.payload,null,2)}</pre></details>{i.attachments.map((a,n)=><button key={n} className="btn small" onClick={()=>{const url=URL.createObjectURL(a.file),link=document.createElement('a');link.href=url;link.download=a.name;link.click();URL.revokeObjectURL(url);}}>Save attachment: {a.name}</button>)}<button className="btn small" onClick={async()=>{if(!confirm('Remove this local draft after reviewing it? Save any attachments first.'))return;await removePending(i.key);if(actor)setOutbox(await pending(actor.id,actor.organizationId));}}>Remove reviewed draft</button></article>)}</section>}
+    {outbox.length>0&&<section className="offline-inbox"><div><strong>{outbox.length} site draft{outbox.length===1?'':'s'} on this device</strong><p>Pending drafts are not server-approved records. Conflicts stay here for review.</p></div><button className="btn primary" disabled={!online||saving||!!requestKey.current} onClick={()=>void syncInbox()}>{syncing?'Syncing…':'Sync drafts'}</button><button className="btn" onClick={()=>download('coreconstruct-offline-drafts-'+dateKey()+'.json',JSON.stringify(outbox.map(i=>({...i,attachments:i.attachments.map(a=>({name:a.name,field:a.field,category:a.category,uploadedId:a.uploadedId}))})),null,2),'application/json')}>Export draft details</button>{outbox.filter(i=>i.status==='needs-review').map(i=><article key={i.key} className="offline-conflict"><p>{i.command.type}: {i.error}. Review the latest record before creating a corrected entry.</p><details><summary>Review queued values</summary><pre style={{whiteSpace:'pre-wrap',overflowWrap:'anywhere'}}>{JSON.stringify(i.command.payload,null,2)}</pre></details>{i.attachments.map((a,n)=><button key={n} className="btn small" onClick={()=>{const url=URL.createObjectURL(a.file),link=document.createElement('a');link.href=url;link.download=a.name;link.click();URL.revokeObjectURL(url);}}>Save attachment: {a.name}</button>)}<button className="btn small" onClick={async()=>{if(!confirm('Remove this local draft after reviewing it? Save any attachments first.'))return;await removePending(i.key);if(actor)setOutbox(await pending(actor.id,actor.organizationId));}}>Remove reviewed draft</button></article>)}</section>}
     {view === 'finance' && actor?.role === 'admin' && online && sampleCount < sampleProjectCount &&
       <div className="notice subtle finance-sample-notice"><Sparkles size={17} />
         <span>Compare four fictional projects with contract values up to KSh 200 million.</span>
@@ -182,7 +281,7 @@ export default function Workspace() {
           <p>{selected !== operationsSampleId ? 'Practise with fictional attendance, an advance and a supplier invoice.'
             : view === 'wagebills' ? 'Prepare the sample week, check the advance deduction, then approve and record payment.'
               : 'Check the invoice, approve the delivery, then return to match the invoice.'}</p></div>
-        {selected !== operationsSampleId ? <button className="btn" disabled={saving} onClick={openOperationsSample}><Sparkles size={15} />Open sample walkthrough</button>
+        {selected !== operationsSampleId ? <button className="btn" disabled={saving} onClick={() => openOperationsSample()}><Sparkles size={15} />Open sample walkthrough</button>
           : <div className="row-actions">
             {view === 'wagebills' && sampleWeek && week !== sampleWeek && <button className="btn" onClick={() => setWeek(sampleWeek)}>Select sample week</button>}
             <button className="btn" onClick={() => { if (view === 'wagebills') go('materials'); else openOperationsSample(); }}>
@@ -218,6 +317,9 @@ export default function Workspace() {
       : requireProject)}
     {view==='finance' && !online && <Empty title="Project finance needs a connection" text="Reconnect to load current finance records and permissions." />}
     {view==='overview' && (role==='finance'||role==='accounts') && <div className="notice subtle"><Wallet size={18} /><span>Open Project finance for your assigned project.</span><button className="btn small" onClick={()=>go('finance')}>Open Project finance</button></div>}
+    {view === 'pilot' && canFinance && <WeeklyClose state={state} projectId={selected} week={week} saving={saving}
+      canOpenSample={actor?.role === 'admin' && state.suite.modules.wages && state.suite.modules.materials && (selected !== operationsSampleId || week !== sampleWeek)}
+      openSample={() => openOperationsSample('pilot')} navigate={go} />}
     {actor&&['site','design','boq','materials','variations','client-portal','team','pilot'].includes(view)&&<SuitePanels view={view as SuiteView} state={state} actor={actor} project={project} week={week} saving={saving} command={command} refresh={refresh} error={error}/>}
     {view==='overview'&&role==='client'&&<section className="panel"><div className="panel-heading"><h2>Your assigned projects</h2></div>{state.projects.map(p=><div className="portal-file" key={p.id}><Building2 size={20}/><div><strong>{p.name}</strong><small>{p.location}</small></div><a className="btn primary" href={href('/client/'+p.id+'?org='+encodeURIComponent(actor?.organizationId||''))}>Open client view</a></div>)}</section>}
     {view==='overview'&&!canFinance&&role!=='client'&&role!=='finance'&&role!=='accounts'&&<section className="panel"><div className="panel-heading"><div><h2>Your project workspace</h2><p>{online?'Assigned records and actions for your role.':'Offline reference view; save supported site entries as drafts.'}</p></div></div><div className="role-dashboard">{['site','design','attendance','materials','reports'].filter(v=>visible(v as View)).map(v=><button className="btn" key={v} onClick={()=>go(v as View)}>{nav.find(n=>n.id===v)?.label||v}<ArrowRight size={14}/></button>)}</div></section>}
@@ -258,7 +360,7 @@ export default function Workspace() {
       </section>}
       <article className="report-sheet"><div className="report-header"><div><span className="report-wordmark">CoreConstruct<span>.</span></span><p>{state.firm}</p></div><div><Badge tone={clientCopy ? 'green' : 'neutral'}>{clientCopy ? 'CLIENT COPY' : 'INTERNAL REPORT'}</Badge><p>{displayDate(week)} – {displayDate(end)} {week.slice(0, 4)}</p></div></div><div className="report-title"><p className="eyebrow">WEEKLY PROJECT UPDATE</p><h2>{project.name}</h2><p><MapPin size={14} />{project.location}{project.client && ` · ${project.client}`}</p>{project.demo && <Badge tone="amber">FICTIONAL SAMPLE RECORDS</Badge>}</div><div className="report-progress"><div><span>Reported physical progress</span><strong>{reportingNote?.progress ?? project.progress}%</strong></div><div className="progress-track"><i style={{ width: (reportingNote?.progress ?? project.progress) + '%' }} /></div><p>{reportingNote?.stage || project.stage} · Owner-reported progress; no independent inspection implied.</p></div><div className="report-section"><h3>Work this week</h3><p className="pre-wrap">{reportingNote?.summary || 'No reporting note saved yet. Add the work completed, decisions made and observations from site.'}</p></div>{!clientCopy || project.mode === 'open' ? <div className="report-section"><h3>{clientCopy ? 'Approved project cost position' : 'Internal financial position'}</h3><p className="muted">Cumulative position as of {displayDate(dateKey())}; submitted costs are excluded.</p><div className="report-financial"><div><span>Approved costs</span><strong>{kes(summary.incurred)}</strong></div><div><span>Confirmed payments</span><strong>{kes(summary.cashPaid)}</strong></div><div><span>Balance on approved costs</span><strong>{kes(summary.outstanding)}</strong></div></div>{!clientCopy && <p className="report-footnote">Internal allowance: {kes(project.budgetCents)}. Advances not allocated to approved wagebills: {kes(summary.unallocatedAdvances)}. This is an operational report, not a tax invoice or a full accounting statement.</p>}</div> : <div className="report-section"><h3>Contract information</h3><p>{project.contractCents ? `Recorded contract sum: ${kes(project.contractCents)}.` : 'Contract sum has not been entered.'} This copy contains the progress note and next actions.</p></div>}<div className="report-two-col"><div className="report-section"><h3>Next steps</h3><p className="pre-wrap">{reportingNote?.nextSteps || 'Add next week’s planned work and decisions needed.'}</p></div><div className="report-section"><h3>Decisions and open issues</h3><p className="pre-wrap">{reportingNote?.risks || 'No open issues have been recorded in this reporting note.'}</p></div></div><div className="report-footer"><span>Prepared by {state.firm}</span><span>{reportingNote?.updatedAt ? `Note updated ${displayDate(reportingNote.updatedAt)}` : 'Reporting note not yet saved'}</span></div></article></>)}
     {view === 'people' && <><div className="section-actions"><p className="muted">{workers.length} people · Daily rates are copied into attendance when recorded.</p><button className="btn primary" onClick={() => open('worker')}><Plus size={16} />Add worker</button></div><section className="panel">{workers.length ? <div className="table-scroll"><table><thead><tr><th>NAME</th><th>TRADE</th><th>AGREED DAILY RATE</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody>{workers.map(w => <tr key={w.id}><td><div className="person-cell"><span className="person-avatar">{w.name.split(' ').map(n => n[0]).slice(0, 2).join('')}</span><strong>{w.name}</strong></div></td><td>{w.trade}</td><td className="strong">{kes(w.rateCents)}</td><td><Badge tone={w.active ? 'green' : 'neutral'}>{w.active ? 'Active' : 'Inactive'}</Badge></td><td><button hidden={!canFinance} className="btn small" onClick={() => open('worker', { ...w, rate: String(w.rateCents / 100) })}>Edit details</button></td></tr>)}</tbody></table></div> : <Empty title="Your team belongs here" text="Start with a name, trade and agreed daily rate. Use your existing process to verify attendance and identity." action={<button className="btn primary" onClick={() => open('worker')}>Add first worker <Plus size={15} /></button>} />}</section><div className="notice subtle"><ShieldCheck size={18} /><span>Worker records track attendance and rates. Login and approval permissions are managed separately in Team access.</span></div></>}
-    {view === 'settings' && actor?.role==='admin' && <div className="settings-grid"><section className="panel"><div className="panel-heading"><div><h2>Firm details</h2><p>Used on your reports</p></div><Building2 size={19} /></div><div className="settings-body"><strong>{state.firm}</strong><p>Currency: Kenyan shillings (KES)<br />Reporting dates: Africa/Nairobi<br />Access: {demo ? 'browser demo' : 'signed-in private workspace'}</p><button className="btn" onClick={() => open('firm')}>Edit firm name</button></div></section><section className="panel"><div className="panel-heading"><div><h2>Project details</h2><p>Allowance, reporting mode and progress</p></div><Settings2 size={19} /></div><div className="settings-body">{project ? <><strong>{project.name}</strong><p>{project.location}<br />Internal allowance: {kes(project.budgetCents)}<br />Client mode: {project.mode === 'fixed' ? 'Fixed-price' : 'Open-book'}</p><button className="btn" onClick={() => open('project-edit', { ...project, budget: String(project.budgetCents / 100), contract: String(project.contractCents / 100) })}>Edit project</button></> : <><p>Set up your first project.</p><button className="btn" onClick={() => open('project')}>Create project</button></>}</div></section><section className="panel"><div className="panel-heading"><div><h2>Keep a copy</h2><p>Download your workspace records</p></div><Download size={19} /></div><div className="settings-body"><p>A backup includes worker names, payment references and decision history. Store it securely, away from your code repository.</p><button className="btn primary" onClick={backup}><Download size={16} />Download JSON backup</button><p className="fine-print">Download backups regularly. Team invitations are managed in Team access. Keep your existing records alongside this pilot.</p></div></section><section className="panel"><div className="panel-heading"><div><h2>Sample projects</h2><p>Fictional records for testing</p></div><Sparkles size={19} /></div><div className="settings-body"><p>Compare contract values, profit and cash across four projects.</p><button className="btn" disabled={saving || !online} onClick={() => sampleCount >= sampleProjectCount ? go('finance') : void loadSampleProjects()}>{sampleCount >= sampleProjectCount ? 'Compare sample projects' : 'Load sample projects'}</button></div></section><section className="panel audit-panel"><div className="panel-heading"><div><h2>Decision history</h2><p>Most recent 25 workspace events</p></div><ShieldCheck size={19} /></div><div className="activity-list">{state.audit.slice(-25).reverse().map(a => <div key={a.id}><span className="activity-dot" /><div><strong>{a.description}</strong><small>{a.actor} · {new Date(a.at).toLocaleString('en-GB', { timeZone: 'Africa/Nairobi' })}</small></div></div>)}{!state.audit.length && <p>No changes recorded yet.</p>}</div></section></div>}
+    {view === 'settings' && actor?.role==='admin' && <div className="settings-grid"><section className="panel"><div className="panel-heading"><div><h2>Firm details</h2><p>Used on your reports</p></div><Building2 size={19} /></div><div className="settings-body"><strong>{state.firm}</strong><p>Currency: Kenyan shillings (KES)<br />Reporting dates: Africa/Nairobi<br />Access: {demo ? 'browser demo' : 'signed-in private workspace'}</p><button className="btn" onClick={() => open('firm')}>Edit firm name</button></div></section><section className="panel"><div className="panel-heading"><div><h2>Project details</h2><p>Allowance, reporting mode and progress</p></div><Settings2 size={19} /></div><div className="settings-body">{project ? <><strong>{project.name}</strong><p>{project.location}<br />Internal allowance: {kes(project.budgetCents)}<br />Client mode: {project.mode === 'fixed' ? 'Fixed-price' : 'Open-book'}</p><button className="btn" onClick={() => open('project-edit', { ...project, budget: String(project.budgetCents / 100), contract: String(project.contractCents / 100) })}>Edit project</button></> : <><p>Set up your first project.</p><button className="btn" onClick={() => open('project')}>Create project</button></>}</div></section><WorkspaceBackup key={actor.organizationId} actor={actor} online={online} exportRecords={backup}/><section className="panel"><div className="panel-heading"><div><h2>Sample projects</h2><p>Fictional records for testing</p></div><Sparkles size={19} /></div><div className="settings-body"><p>Compare contract values, profit and cash across four projects.</p><button className="btn" disabled={saving || !online} onClick={() => sampleCount >= sampleProjectCount ? go('finance') : void loadSampleProjects()}>{sampleCount >= sampleProjectCount ? 'Compare sample projects' : 'Load sample projects'}</button></div></section><section className="panel audit-panel"><div className="panel-heading"><div><h2>Decision history</h2><p>Most recent 25 workspace events</p></div><ShieldCheck size={19} /></div><div className="activity-list">{state.audit.slice(-25).reverse().map(a => <div key={a.id}><span className="activity-dot" /><div><strong>{a.description}</strong><small>{a.actor} · {new Date(a.at).toLocaleString('en-GB', { timeZone: 'Africa/Nairobi' })}</small></div></div>)}{!state.audit.length && <p>No changes recorded yet.</p>}</div></section></div>}
     {view==='settings'&&actor?.role==='admin'&&<SuitePanels view="configuration" state={state} actor={actor} project={project} week={week} saving={saving} command={command} refresh={refresh} error={error}/>}
     <footer className="workspace-footer"><span><span className="mini-brand">CC</span>CoreConstruct <span>·</span> A clearer view of every site.</span><span>{demo ? 'Public demo · Fictional records' : <>Private internal pilot <span className="footer-dot" /> Role-based project access</>}</span></footer>
   </>}</main></div>{toast && <div className="toast" role="status"><CheckCircle2 size={18} />{toast}</div>}{dialog && <Modal organizationId={actor?.organizationId} canApprove={canFinance} dialog={dialog} state={state} project={project} workers={activeWorkers} week={week} saving={saving} error={error} close={() => { if (!inflight.current) setDialog(null); }} command={command} open={open} />}</div>;

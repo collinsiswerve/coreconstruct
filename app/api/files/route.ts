@@ -11,8 +11,32 @@ export async function POST(request:Request){try{requireOrigin(request);const len
  const bytes=await file.arrayBuffer(),type=detect(new Uint8Array(bytes));if(category==='drawing'&&type!=='application/pdf')throw new DomainError('Construction drawing packages must be PDF files.');if(['branding','offload'].includes(category)&&!type.startsWith('image/'))throw new DomainError('Choose an image for this evidence.');if(category==='branding'&&type==='image/webp')throw new DomainError('Use JPEG or PNG for a logo so it can be embedded in receipts.');
  if(category==='media'&&!type.startsWith('image/')&&type!=='video/mp4')throw new DomainError('Site media must be an image or short MP4.');
  if(type==='application/pdf'){try{const pdf=await PDFDocument.load(bytes,{ignoreEncryption:false});if(pdf.getPageCount()>80)throw new Error('Too many pages');}catch{throw new DomainError('Use a readable, unencrypted PDF with no more than 80 pages.');}}
- const id=crypto.randomUUID(),at=new Date().toISOString(),details=ctx.state.suite.projectDetails[projectId]||detailDefaults();let supplied:unknown={};try{supplied=JSON.parse(String(form.get('location')||'{}'));}catch{throw new DomainError('Invalid location evidence.');}const location=locationEvidence(details,supplied,at),hash=await digest(bytes),key=ctx.actor.organizationId+'/'+id;
+ const uploadKey=String(form.get('uploadKey')||'');
+ if(uploadKey&&!/^[a-zA-Z0-9-]{8,100}\.[a-zA-Z]{1,30}$/.test(uploadKey))throw new DomainError('Invalid evidence upload identifier.');
+ const at=new Date().toISOString(),details=ctx.state.suite.projectDetails[projectId]||detailDefaults();
+ let supplied:unknown={};try{supplied=JSON.parse(String(form.get('location')||'{}'));}catch{throw new DomainError('Invalid location evidence.');}
+ const organizationId=ctx.actor.organizationId, name=file.name.slice(0,180), hash=await digest(bytes);
+ const id=uploadKey
+   ? await digest(JSON.stringify([organizationId,ctx.actor.id,uploadKey,projectId,category,name,hash,supplied]))
+   : crypto.randomUUID();
+ const key=organizationId+'/'+id;
+ const db=database();
+ const findUpload=()=>db.prepare('SELECT location FROM files WHERE id=? AND organization_id=?').bind(id,organizationId).first<{location:string}>();
+ const previous=uploadKey?await findUpload():null;
+ if(previous)return json({file:{id,name,contentType:type,size:file.size,location:JSON.parse(previous.location)}});
+ const location=locationEvidence(details,supplied,at);
  await env.BUCKET.put(key,bytes,{httpMetadata:{contentType:type},customMetadata:{organizationId:ctx.actor.organizationId,fileId:id}});
- try{await database().prepare('INSERT INTO files (id,organization_id,project_id,category,name,content_type,size,sha256,uploaded_by,uploaded_at,location) VALUES (?,?,?,?,?,?,?,?,?,?,?)').bind(id,ctx.actor.organizationId,projectId,category,file.name.slice(0,180),type,file.size,hash,ctx.actor.id,at,JSON.stringify(location)).run();}catch(e){await env.BUCKET.delete(key);throw e;}
- return json({file:{id,name:file.name,contentType:type,size:file.size,location}});
+ try{
+   const result=await db.prepare('INSERT INTO files (id,organization_id,project_id,category,name,content_type,size,sha256,uploaded_by,uploaded_at,location) VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING').bind(id,organizationId,projectId,category,name,type,file.size,hash,ctx.actor.id,at,JSON.stringify(location)).run();
+   if(result.meta.changes!==1){
+     const stored=await findUpload();
+     if(!stored)throw new DomainError('Evidence upload could not be confirmed.',503);
+     return json({file:{id,name,contentType:type,size:file.size,location:JSON.parse(stored.location)}});
+   }
+ }catch(e){
+   // A second request may already have committed this upload.
+   if(!uploadKey)await env.BUCKET.delete(key);
+   throw e;
+ }
+ return json({file:{id,name,contentType:type,size:file.size,location}});
  }catch(e){return catchResponse(e);}}

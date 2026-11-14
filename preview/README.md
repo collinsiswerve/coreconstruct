@@ -2,6 +2,8 @@
 
 This build uses the CoreConstruct workspace and business rules with fictional Archi-Hub records. The demo API runs inside the browser, including document attachments and client decisions. Reset demo clears the browser's demo records and files.
 
+Use **Pilot results → Open sample weekly close** for the end-to-end sample. The app's signed-in role, offline retry and records-and-files recovery checks use the hosted application routes and fresh test storage.
+
 ## Build
 
 Requires the Node and pnpm versions in the parent repository. From the repository root:

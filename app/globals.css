@@ -175,3 +175,19 @@
 .report-publish { margin:0 0 16px; padding:14px 18px; }
 .weekly-downloads .notice { margin:6px 0 0; }
 @media print { .report-publish { display:none; } }
+
+.weekly-close .panel-heading { flex-wrap: wrap; gap: 12px; }
+.close-checks { margin: 0 22px; padding: 0; list-style: none; }
+.close-checks li { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr) auto; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.close-checks li > .badge { justify-self: start; }
+.close-balances-heading { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; justify-content: space-between; }
+.close-balances-heading h3 { font-size: 14px; margin: 0; }
+.close-balances .pilot-score-grid { margin: 12px 0; }
+.close-receipts { padding-top: 8px; }
+.close-receipts strong { margin-left: 5px; }
+@media (max-width: 540px) {
+  .close-checks { margin: 0 17px; }
+  .close-checks li { grid-template-columns: minmax(0,1fr) auto; }
+  .close-checks li > .text-button { grid-column: 1 / -1; justify-self: start; }
+  .close-balances .pilot-score-grid strong { font-size: 17px; }
+}

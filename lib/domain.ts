@@ -15,7 +15,7 @@ export type ReportNote = { id: string; projectId: string; weekStart: string; sum
 export type AuditEvent = { id: string; at: string; actor: string; action: string; projectId?: string; description: string; before?: unknown };
 export type State = { schemaVersion: 1; firm: string; projects: Project[]; workers: Worker[]; attendance: Attendance[]; advances: Advance[]; wagebills: Wagebill[]; expenses: Expense[]; payments: Payment[]; reports: ReportNote[]; audit: AuditEvent[]; commandIds: string[] };
 export type Command = { id: string; type: string; payload: Record<string, unknown> };
-export class DomainError extends Error { constructor(message: string, public status = 400) { super(message); } }
+export class DomainError extends Error { constructor(message: string, public status = 400, public code?: string) { super(message); } }
 export const emptyState = (): State => ({ schemaVersion: 1, firm: 'Geeks Signature Limited', projects: [], workers: [], attendance: [], advances: [], wagebills: [], expenses: [], payments: [], reports: [], audit: [], commandIds: [] });
 export function moneyToCents(value: unknown): number {
   const s = String(value ?? '').trim();
