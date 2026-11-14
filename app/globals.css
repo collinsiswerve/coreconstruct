@@ -163,3 +163,15 @@
 .operations-match-message ul { margin: 0; padding-left: 16px; }
 .operations-walkthrough { margin-bottom: 16px; }
 .operations-walkthrough .panel-heading { flex-wrap: wrap; gap: 10px; }
+
+.drawing-register th[scope="row"] { text-align:left; text-transform:none; letter-spacing:normal; color:var(--ink); font-size:13px; }
+.drawing-register .table-subtext { max-width:25ch; }
+.drawing-acknowledgements summary, .drawing-history summary { cursor:pointer; }
+.drawing-acknowledgements ul { list-style:none; padding:0; margin:7px 0 0; }
+.drawing-history { border-top:1px solid var(--line); }
+.drawing-history > summary { padding:15px 22px; font-weight:650; }
+.drawing-history > summary span { margin-left:4px; color:var(--muted); font-weight:500; }
+.portal-update-head, .report-publish { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.report-publish { margin:0 0 16px; padding:14px 18px; }
+.weekly-downloads .notice { margin:6px 0 0; }
+@media print { .report-publish { display:none; } }

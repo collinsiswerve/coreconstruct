@@ -44,6 +44,13 @@ As the principal, open **Wagebills** or **Materials & store** and select **Open 
 8. Return an unapproved invoice, correct it and resubmit. An approved unpaid invoice can be reversed with a reason; its old cost remains in history and stops counting. A paid invoice first requires reversal/reconciliation of its payment record.
 9. Supplier invoices are entered per order line in this pilot. Use distinct references for separately entered supplier lines; aggregate multi-line invoice entry and supplier tax validation are remaining work.
 
+## Drawings and client updates walkthrough
+
+1. In **Drawings & evidence**, choose **Open client updates walkthrough**. Issue A-101 revision 2 and check that revision 1 moves to **Drafts and revision history**. Acknowledge and publish revision 2. The Pages **Site foreman** view should show only revision 2 and can record its own acknowledgement.
+2. Publish the reviewed canopy field note. Open **Weekly report**, review the selected sample week and publish the update. The client view should show the published note, field note and current drawing. Download the PDF and Excel workbook and compare the week, progress, summary, next steps and open issues.
+3. Revise **VO-DEMO-M4-001** and resend it. In the sample client view, decide on revision 2. The KSh 48,000 accepted amount brings the KSh 2,250,000 contract to KSh 2,298,000. The two activity days do not move completion because this variation has no completion effect.
+4. Edit the weekly note and verify it returns to draft. The edited note becomes available for download after it is reviewed and published. Repeat the walkthrough with separate signed-in roles during the Archi-Hub pilot.
+
 ## Design, evidence and client decisions
 
 1. Upload a PDF with sheet code A01. It must start as draft. Issue it, publish it and acknowledge the current revision.

@@ -4,6 +4,7 @@ import { activeFunding, amountApplied, emptyFinance, linkFunding, openCommitment
 import { boqTotals, maxBoqRows, parseBoqLine } from './boq-import';
 import { openingBalanceFigures, parseOpeningBalances } from './opening-balances';
 import { isSupplierInvoiceCost, supplierInvoiceMatch } from './procurement';
+import { addSampleClientUpdates, clientUpdatesSampleId } from './sample-client-updates';
 import { addSampleOperations, operationsSampleId } from './sample-operations';
 import { addSampleFinance } from './sample-finance';
 import { addSampleComparisonProjects, isFinanceSample, sampleProjectCount } from './sample-projects';
@@ -249,19 +250,44 @@ export function executeSuite(original: State | SuiteState, command: Command, act
     case 'invoice.reverse': {const inv=get(s.suite.invoices,p.invoiceId,'Invoice');projectId=inv.projectId;if(inv.status!=='approved'||!inv.expenseId)fail('Only an approved invoice can be reversed.');if(s.payments.some(x=>x.targetId===inv.expenseId&&!x.reversedAt))fail('Reverse the confirmed payment record before reversing its invoice.');before={...inv};const reason=required(p.reason,'Reason');const cost=get(s.expenses,inv.expenseId,'Expense');cost.status='returned';cost.supplierInvoiceId=inv.id;inv.status='returned';inv.reason=reason;description=`Reversed supplier invoice ${inv.reference}: ${reason}`;break;}
     case 'invoice.return': { const inv = get(s.suite.invoices,p.invoiceId,'Invoice'); projectId=inv.projectId; if(inv.status!=='submitted') fail('Only unapproved invoices can be returned.'); before={...inv}; inv.status='returned';inv.reason=required(p.reason,'Reason');description=`Returned invoice ${inv.reference}`;break; }
     case 'drawing.add': { if(s.suite.drawings.some(d=>d.fileId===p.fileId))fail('Upload a separate file for each document revision.'); const x=project(), sheet=required(p.sheetCode,'Sheet code',60), category=required(p.category||'Design drawings','Category',80), revisions=s.suite.drawings.filter(d=>d.projectId===x.id&&d.sheetCode.toLowerCase()===sheet.toLowerCase()); s.suite.drawings.push({id:id(),projectId:x.id,title:required(p.title,'Document title',160),sheetCode:sheet,discipline:required(p.discipline||'Architectural','Discipline',60),category,revision:Math.max(0,...revisions.map(r=>r.revision))+1,status:'draft',fileId:required(p.fileId,'Document file',100),published:false,uploadedBy:actor.id,uploadedAt:at});description=`Uploaded draft ${sheet}; construction issue still requires review`;break; }
-    case 'drawing.issue': { const d=get(s.suite.drawings,p.drawingId,'Drawing');projectId=d.projectId;if(d.status!=='draft')fail('Only a draft revision can be issued.'); const latest=Math.max(...s.suite.drawings.filter(x=>x.projectId===d.projectId&&x.sheetCode.toLowerCase()===d.sheetCode.toLowerCase()).map(x=>x.revision));if(d.revision!==latest)fail('A newer draft exists. Issue the latest revision.');before=structuredClone(s.suite.drawings.filter(x=>x.projectId===d.projectId&&x.sheetCode.toLowerCase()===d.sheetCode.toLowerCase()));for(const old of s.suite.drawings)if(old.projectId===d.projectId&&old.sheetCode.toLowerCase()===d.sheetCode.toLowerCase()&&old.status==='current')old.status='superseded';d.status='current';d.issuedBy=actor.id;d.issuedAt=at;description=`Issued ${d.sheetCode} revision ${d.revision}; previous current revision superseded`;break; }
+    case 'drawing.issue': { const d=get(s.suite.drawings,p.drawingId,'Drawing');projectId=d.projectId;if(d.status!=='draft')fail('Only a draft revision can be issued.'); const latest=Math.max(...s.suite.drawings.filter(x=>x.projectId===d.projectId&&x.sheetCode.toLowerCase()===d.sheetCode.toLowerCase()).map(x=>x.revision));if(d.revision!==latest)fail('A newer draft exists. Issue the latest revision.');before=structuredClone(s.suite.drawings.filter(x=>x.projectId===d.projectId&&x.sheetCode.toLowerCase()===d.sheetCode.toLowerCase()));for(const old of s.suite.drawings)if(old.projectId===d.projectId&&old.sheetCode.toLowerCase()===d.sheetCode.toLowerCase()&&old.status==='current'){old.status='superseded';old.published=false;}d.status='current';d.issuedBy=actor.id;d.issuedAt=at;description=`Issued ${d.sheetCode} revision ${d.revision}; previous current revision superseded`;break; }
     case 'drawing.publish': { const d=get(s.suite.drawings,p.drawingId,'Drawing');projectId=d.projectId;if(d.status!=='current')fail('Only a current issued drawing can be published.');before={...d};d.published=p.published===true;description=`${d.published?'Published':'Unpublished'} ${d.sheetCode} revision ${d.revision}`;break; }
     case 'design.accept': {const d=get(s.suite.drawings,p.drawingId,'Drawing');projectId=d.projectId;if(actor.projectRoles[d.projectId]!=='client'&&actor.role!=='client')fail('Only the assigned client may record design acceptance.',403);if(d.status!=='current'||!d.published||Number(p.revision)!==d.revision)fail('Review the current published revision before accepting the design.',409);if(!s.suite.designAcceptances.some(a=>a.drawingId===d.id&&a.clientId===actor.id))s.suite.designAcceptances.push({drawingId:d.id,revision:d.revision,clientId:actor.id,clientEmail:actor.email,at});description=`Client accepted design ${d.sheetCode} revision ${d.revision}; professional issue remains a separate action`;break;}
-    case 'drawing.acknowledge': { const d=get(s.suite.drawings,p.drawingId,'Drawing');projectId=d.projectId;if(d.status!=='current')fail('Acknowledge the current revision, not a superseded drawing.');if(!s.suite.acknowledgements.some(a=>a.drawingId===d.id&&a.userId===actor.id))s.suite.acknowledgements.push({drawingId:d.id,userId:actor.id,at});description=`Acknowledged ${d.sheetCode} revision ${d.revision}`;break; }
+    case 'drawing.acknowledge': {
+      const d = get(s.suite.drawings, p.drawingId, 'Drawing');
+      projectId = d.projectId;
+      if (d.status !== 'current' || p.revision !== undefined && p.revision !== d.revision) {
+        throw new DomainError('Acknowledge the current revision, not a superseded drawing.', 409);
+      }
+      if (!s.suite.acknowledgements.some(a => a.drawingId === d.id && a.userId === actor.id)) {
+        s.suite.acknowledgements.push({ drawingId: d.id, userId: actor.id, name: actor.name, at });
+      }
+      description = `Acknowledged ${d.sheetCode} revision ${d.revision}`;
+      break;
+    }
     case 'media.capture': { const x=project(),loc=locationEvidence(s.suite.projectDetails[x.id]||detailDefaults(),p.location,at);if(s.suite.brand.enforceGps&&loc.status!=='matched'&&!loc.exceptionReason)fail('Explain missing, uncertain or outside-site location evidence.');s.suite.media.push({id:id(),projectId:x.id,fileId:required(p.fileId,'Photo or video',100),contentType:String(p.contentType||'image/jpeg'),caption:required(p.caption,'Caption',500),stage:required(p.stage||x.stage,'Stage',80),location:loc,submittedBy:actor.id,createdAt:at,published:false});description='Captured site media for review; not yet published';break; }
     case 'media.publish': {const m=get(s.suite.media,p.mediaId,'Media');projectId=m.projectId;before={...m};m.published=p.published===true;m.publishedAt=m.published?at:undefined;description=`${m.published?'Published':'Unpublished'} a reviewed progress item`;break;}
-    case 'report.publish': {const x=project(),week=isoDate(p.weekStart);const note=s.reports.find(r=>r.projectId===x.id&&r.weekStart===week);if(!note)fail('Save this week’s reporting note first.');const key=x.id+':'+week;before=s.suite.publishedWeeks[key];if(p.published===false)delete s.suite.publishedWeeks[key];else s.suite.publishedWeeks[key]=note!.updatedAt;description=`${p.published===false?'Unpublished':'Published'} weekly report for ${week}`;break;}
+    case 'report.publish': {
+      const x = project(), week = isoDate(p.weekStart);
+      const note = s.reports.find(r => r.projectId === x.id && r.weekStart === week);
+      if (!note) throw new DomainError('Save this week’s reporting note first.');
+      if (p.expectedUpdatedAt !== undefined && p.expectedUpdatedAt !== note.updatedAt) {
+        throw new DomainError('This update changed. Review the latest note before publishing.', 409);
+      }
+      const key = x.id + ':' + week;
+      before = s.suite.publishedWeeks[key];
+      if (p.published === false) delete s.suite.publishedWeeks[key];
+      else s.suite.publishedWeeks[key] = note.updatedAt;
+      description = `${p.published === false ? 'Unpublished' : 'Published'} weekly report for ${week}`;
+      break;
+    }
     case 'variation.create': case 'variation.revise': {
-      const x=project(),old=command.type==='variation.revise'?get(s.suite.variations,p.variationId,'Variation'):undefined;if(old&&(old.projectId!==x.id||!['draft','sent'].includes(old.status)))fail('Accepted, rejected or withdrawn variations cannot be rewritten.');before=old?{...old}:undefined;
+      const x=project(),old=command.type==='variation.revise'?get(s.suite.variations,p.variationId,'Variation'):undefined;if(old&&(old.projectId!==x.id||!['draft','sent'].includes(old.status)))fail('Accepted, rejected or withdrawn variations cannot be rewritten.');if(old&&p.expectedRevision!==undefined&&p.expectedRevision!==old.revision)throw new DomainError('The variation changed. Review the latest revision before saving.',409);
+      before=old?{...old}:undefined;
       const days=Number(p.days||0);if(!Number.isInteger(days)||Math.abs(days)>3650)fail('Time effect must be a whole number of days.');const affectsCompletion=p.affectsCompletion===true, programmeReason=optionalText(p.programmeReason,1000);if(affectsCompletion&&!programmeReason)fail('Explain how this change affects the project completion date.');
       const value:Variation={id:old?.id||id(),projectId:x.id,number:old?.number||`VO-${String(++s.suite.sequences.variations).padStart(4,'0')}`,title:required(p.title,'Variation title',160),description:required(p.description,'Scope',3000),revision:(old?.revision||0)+1,clientDeltaCents:signedCents(p.clientDelta),internalDeltaCents:signedCents(p.internalDelta),days,affectsCompletion,programmeReason,status:'draft',submittedBy:actor.id,createdAt:at};if(old)Object.assign(old,value,{sentAt:undefined});else s.suite.variations.push(value);description=`Saved ${value.number} revision ${value.revision}; client acceptance pending`;break;
     }
-    case 'variation.send': {const v=get(s.suite.variations,p.variationId,'Variation');projectId=v.projectId;if(v.status!=='draft')fail('Only a draft can be sent for a client decision.');v.status='sent';v.sentAt=at;description=`Sent ${v.number} revision ${v.revision} for client acceptance`;break;}
+    case 'variation.send': {const v=get(s.suite.variations,p.variationId,'Variation');projectId=v.projectId;if(v.status!=='draft')fail('Only a draft can be sent for a client decision.');if(p.revision!==undefined&&p.revision!==v.revision)throw new DomainError('The variation changed. Review the latest revision before sending.',409);v.status='sent';v.sentAt=at;description=`Sent ${v.number} revision ${v.revision} for client acceptance`;break;}
     case 'variation.withdraw': {const v=get(s.suite.variations,p.variationId,'Variation');projectId=v.projectId;if(!['draft','sent'].includes(v.status))fail('A decided variation cannot be withdrawn.');before={...v};v.status='withdrawn';v.decisionNote=required(p.reason,'Reason');description=`Withdrew ${v.number}`;break;}
     case 'variation.decide': case 'variation.recordClientDecision': {
       const v=get(s.suite.variations,p.variationId,'Variation');projectId=v.projectId;if(v.status!=='sent')fail('This variation is no longer awaiting a decision.',409);if(Number(p.revision)!==v.revision)fail('The variation version changed. Review the latest revision before deciding.',409);
@@ -284,6 +310,17 @@ export function executeSuite(original: State | SuiteState, command: Command, act
         && !s.suite.milestones.some(b => b.projectId === projectId)) addSampleFinance(s, projectId, actor.id, at);
       addSampleComparisonProjects(s, projectId, actor.id, at);
       description = 'Loaded fictional sample projects for finance comparison';
+      break;
+    }
+    case 'demo.client-updates.load': {
+      if (actor.role !== 'admin') fail('Only the principal can load this walkthrough.', 403);
+      if (!s.suite.modules.design || !s.suite.modules.portal || !s.suite.modules.variations) {
+        fail('Enable drawings, client updates and variations to open this walkthrough.');
+      }
+      addSampleClientUpdates(s, at);
+      projectId = clientUpdatesSampleId;
+      s.suite.projectDetails[projectId] = { ...detailDefaults(), estimatedCompletion: addDays(dateKey(new Date(at)), 56) };
+      description = 'Loaded a fictional drawings and client updates walkthrough';
       break;
     }
     case 'demo.operations.load': {

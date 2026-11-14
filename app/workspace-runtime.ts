@@ -6,7 +6,7 @@ type WorkspaceRuntime = {
   demo?: {
     reset: () => Promise<void>;
     role: string;
-    switchRole: (role: string, projectId: string) => void;
+    switchRole: (role: string, projectId: string, view?: string) => void;
   };
 };
 

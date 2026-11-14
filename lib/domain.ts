@@ -1,6 +1,6 @@
 import type { OpeningBalances } from './opening-balances';
 
-export type Project = { id: string; name: string; location: string; client: string; budgetCents: number; contractCents: number; mode: 'fixed' | 'open'; stage: string; progress: number; demo: boolean; createdAt: string; summary?: string; nextSteps?: string; risks?: string; reportUpdatedAt?: string; sampleWalkthrough?: 'labour-procurement'; opening?: OpeningBalances; openingCash?: Pick<OpeningBalances, 'clientReceivedCents' | 'costsPaidCents'> };
+export type Project = { id: string; name: string; location: string; client: string; budgetCents: number; contractCents: number; mode: 'fixed' | 'open'; stage: string; progress: number; demo: boolean; createdAt: string; summary?: string; nextSteps?: string; risks?: string; reportUpdatedAt?: string; sampleWalkthrough?: 'labour-procurement' | 'drawings-client-updates'; opening?: OpeningBalances; openingCash?: Pick<OpeningBalances, 'clientReceivedCents' | 'costsPaidCents'> };
 export type Worker = { id: string; name: string; trade: string; rateCents: number; active: boolean; demo: boolean; sampleProjectId?: string };
 export function workerOnProject(worker: Worker, project: Project) {
   return worker.demo === project.demo && worker.sampleProjectId === (project.sampleWalkthrough ? project.id : undefined);

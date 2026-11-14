@@ -1,3 +1,5 @@
+import { assertDrawingAccess } from '../lib/drawings';
+import { sampleEvidenceAsset } from '../lib/sample-client-updates';
 import { DomainError, type Command } from '../lib/domain';
 import { authorize, clientView, filterState, roleFor } from '../lib/security';
 import { enabled, executeSuite, get, normalizeState } from '../lib/suite';
@@ -14,7 +16,7 @@ export async function createDemoRuntime() {
   const files = await openDemoFiles();
   const params = new URLSearchParams(window.location.search);
   const requestedRole = params.get('as');
-  const previewRole = requestedRole === 'pm' || requestedRole === 'accounts' || requestedRole === 'finance' ? requestedRole : 'admin';
+  const previewRole = requestedRole === 'pm' || requestedRole === 'accounts' || requestedRole === 'finance' || requestedRole === 'foreman' ? requestedRole : 'admin';
   let current = sampleWorkspace();
 
   function save(state: SuiteState) {
@@ -47,8 +49,12 @@ export async function createDemoRuntime() {
     const url = new URL(path, root);
     const [, kind, type, id] = url.pathname.split('/');
     if (kind === 'api' && type === 'files' && id) {
-      const sample = { 'floor-plan-r1': 'floor-plan-r1.pdf', 'floor-plan-r2': 'floor-plan-r2.pdf' }[id];
-      return sample ? new URL('samples/' + sample, root).href : files.href(id) || '#';
+      const fileId = decodeURIComponent(id);
+      const drawing = read().suite.drawings.find(item => item.fileId === fileId);
+      if (drawing) return new URL('?drawing=' + encodeURIComponent(fileId) + (params.get('client') ? '&forClient=' + encodeURIComponent(params.get('client')!) : '')
+        + (params.get('as') ? '&as=' + encodeURIComponent(params.get('as')!) + '&project=' + encodeURIComponent(params.get('project') || '') : ''), root).href;
+      const sample = sampleEvidenceAsset(fileId);
+      return sample ? new URL(sample.slice(1), root).href : files.href(fileId) || '#';
     }
     if ((kind === 'api' && type === 'receipts' && id) || (kind === 'receipts' && type)) {
       const query = new URLSearchParams(params);
@@ -63,12 +69,12 @@ export async function createDemoRuntime() {
   }
 
   function actorFor(state: SuiteState): Actor {
-    const client = params.get('client');
+    const client = params.get('client') || params.get('forClient');
     const role = client ? 'client' : previewRole;
     if (role === 'admin') return principal;
     const project = state.projects.find(item => item.id === (client || params.get('project')))
       || state.projects.find(isFinanceSample);
-    const names = { client: 'Sample client', pm: 'Demo PM / QS', accounts: 'Demo Accounts', finance: 'Demo Finance' };
+    const names = { client: 'Sample client', pm: 'Demo PM / QS', accounts: 'Demo Accounts', finance: 'Demo Finance', foreman: 'Demo foreman' };
     return {
       id: 'demo-' + role,
       name: names[role],
@@ -116,11 +122,36 @@ export async function createDemoRuntime() {
         return Response.json({ file: { id } });
       }
 
+      if (url.pathname.startsWith('/api/files/')) {
+        const fileId = decodeURIComponent(url.pathname.split('/').at(-1) || '');
+        const drawing = state.suite.drawings.find(item => item.fileId === fileId);
+        if (!drawing) throw new DomainError('Drawing file is unavailable.', 404);
+        const role = roleFor(actor, drawing.projectId);
+        if (!enabled(state, drawing.projectId, 'design') || role === 'client' && !enabled(state, drawing.projectId, 'portal')) {
+          throw new DomainError('Drawing access is disabled.', 403);
+        }
+        assertDrawingAccess(drawing, role);
+        const { sampleDrawingBytes } = await import('../lib/sample-drawing-files');
+        const sample = sampleDrawingBytes(fileId);
+        const uploadedUrl = files.href(fileId);
+        const uploaded = !sample && uploadedUrl ? await fetch(uploadedUrl) : undefined;
+        const raw = sample ?? (uploaded?.ok ? await uploaded.arrayBuffer() : undefined);
+        if (!raw) throw new DomainError('Drawing file is unavailable.', 404);
+        const { watermarkDrawing } = await import('../lib/documents');
+        const bytes = await watermarkDrawing(raw, drawing);
+        return new Response(bytes.slice().buffer as ArrayBuffer, { headers: { 'Content-Type': 'application/pdf' } });
+      }
+
       if (url.pathname === '/api/portal') return Response.json({ links: [] });
       if (url.pathname === '/api/client-view') {
         const projectId = url.searchParams.get('projectId') || '';
         if (!['admin','pm','client'].includes(roleFor(actor, projectId))) throw new DomainError('Client view is unavailable for this role.', 403);
-        return Response.json({ portal: clientView(state, projectId), organizationId: actor.organizationId, actor });
+        const portal = clientView(state, projectId);
+        if (url.searchParams.has('export')) {
+          const { exportWeeklyUpdate } = await import('../lib/weekly-download');
+          return await exportWeeklyUpdate(portal, url.searchParams.get('week') || '', url.searchParams.get('export') || '');
+        }
+        return Response.json({ portal, organizationId: actor.organizationId, actor });
       }
 
       if (url.pathname.startsWith('/api/receipts/')) {
@@ -152,12 +183,13 @@ export async function createDemoRuntime() {
     href,
     demo: {
       role: previewRole,
-      switchRole(role: string, projectId: string) {
+      switchRole(role: string, projectId: string, currentView?: string) {
         if (role === 'client' && projectId) {
           location.assign(href('/client/' + projectId));
           return;
         }
-        const query = new URLSearchParams({ view: 'finance', as: role, project: projectId });
+        const view = role === 'foreman' || (role === 'admin' || role === 'pm') && currentView === 'design' ? 'design' : 'finance';
+        const query = new URLSearchParams({ view, as: role, project: projectId });
         location.assign(new URL('?' + query, root));
       },
       async reset() {
