@@ -12,6 +12,16 @@ Use one test project first. Keep the firm's existing records alongside the pilot
 6. On a fictional project without overlapping transactions, have the principal open **Opening balances**. Use the same cutoff and a source reference for the budget and ledger. Enter KSh 720,000 budget, KSh 500,000 billed, KSh 300,000 received, KSh 250,000 incurred and KSh 175,000 paid. The preview should show KSh 200,000 client balance due, KSh 75,000 unpaid costs and KSh 125,000 tracked cash. After saving, apply a later receipt to the opening client balance and record a payment against **Opening unpaid costs** in **Expenses**. The balances should fall without adding the historical cost twice.
 7. Verify that the assigned PM/QS can import the BOQ for their project. Check that Accounts can post and apply receipts without seeing the internal opening budget, and the assigned client sees their billing and receipt figures. Check that users assigned elsewhere cannot view or update the project. Use the private pilot for the signed-in walkthrough.
 
+## Labour and procurement walkthrough
+
+As the principal, open **Wagebills** or **Materials & store** and select **Open sample walkthrough**. The sample opens on the week already containing attendance. The supplied delivery note and invoice are fictional.
+
+1. Select **Prepare wagebill**. Check one full day and one half day at KSh 1,000 per day. Preview KSh 1,500 gross, a KSh 300 advance deduction and KSh 1,200 net. Submit and approve the bill, then record the fictional KSh 1,200 payment.
+2. In **Materials & store → Invoices**, review the three-way match for INV-DEMO-M3-001. The order is for ten bags at KSh 700 per bag. Approval is blocked until the delivery is approved.
+3. In **Deliveries**, check DN-DEMO-M3-001 and approve six bags. In **Invoices**, verify that four bags at KSh 700 match and approve KSh 2,800. Open purchase commitments should fall from KSh 7,000 to KSh 4,200.
+4. In the invoice register, record a fictional KSh 1,000 payment. Check KSh 1,800 due. In **Overview**, reconcile KSh 4,300 in approved costs, KSh 2,500 in confirmed cash paid and KSh 1,800 in outstanding approved costs. Confirm the stock is six bags.
+5. Check the same workflow with separate signed-in roles in the private pilot. The owner can use the reasoned principal override on their own submissions for the sample.
+
 ## Labour, costs and payments
 
 1. Add two fictional workers at KES 1,000/day. Record one full day and one half day: expected gross is KES 1,500.

@@ -1,3 +1,4 @@
+import { isSupplierInvoiceCost } from './procurement';
 import { DomainError, paidFor, type Command } from './domain';
 import { detailDefaults, enabled, get, normalizeState, projectFinancials } from './suite';
 import type { Actor, Module, Role, SuiteState } from './suite-types';
@@ -66,12 +67,15 @@ export function filterState(original:SuiteState,actor:Actor):SuiteState {
  s.expenses=ids(s.expenses,pid=>field(pid)||accountOperations(pid)).filter(expense=>{
    const role=roleFor(actor,expense.projectId);
    if(role==='accounts')return paidExpenses.has(expense.id);
-   return role!=='foreman'||!expense.opening;
+   return role!=='foreman'||(!expense.opening && !isSupplierInvoiceCost(s, expense));
  }).map(expense=>roleFor(actor,expense.projectId)==='accounts'?{
    ...expense,receiptUrl:'',receiptFileId:undefined,
    ...(expense.opening?{receiptRef:'',amountCents:paidFor(s,'expense',expense.id)}:{}),
  }:expense);s.advances=ids(s.advances,accountOperations);s.payments=ids(s.payments,accountOperations);
- const staffAllowed=s.projects.some(p=>field(p.id))||actor.role==='admin';if(!staffAllowed)s.workers=[];
+ const staffAllowed=s.projects.some(p=>field(p.id))||actor.role==='admin';
+ if(!staffAllowed)s.workers=[];
+ else if(actor.role!=='admin')s.workers=s.workers.filter(worker=>!worker.sampleProjectId
+   || (assigned.has(worker.sampleProjectId) && field(worker.sampleProjectId)));
  s.reports=ids(s.reports,pid=>roleFor(actor,pid)!=='client').concat(ids(original.reports,pid=>roleFor(actor,pid)==='client').filter(r=>s.suite.publishedWeeks[r.projectId+':'+r.weekStart]===r.updatedAt));s.suite.boq=ids(s.suite.boq,field).map(b=>financial(b.projectId)?b:{...b,clientRateCents:0,allowanceCents:0,labourAllowanceCents:0});s.suite.orders=ids(s.suite.orders,pid=>field(pid)||financial(pid));s.suite.deliveries=ids(s.suite.deliveries,field);s.suite.stock=ids(s.suite.stock,field);s.suite.invoices=ids(s.suite.invoices,financial);
  s.suite.drawings=ids(s.suite.drawings,design);s.suite.media=ids(s.suite.media,design);s.suite.variations=ids(s.suite.variations,pid=>roleFor(actor,pid)!=='client').map(v=>financial(v.projectId)?v:{...v,internalDeltaCents:0,externalEvidence:undefined,decisionNote:undefined});s.suite.receipts=ids(s.suite.receipts,accountOperations);s.suite.milestones=ids(s.suite.milestones,accountOperations);s.suite.actions=ids(s.suite.actions,pid=>roleFor(actor,pid)!=='client');
  s.suite.projectDetails=Object.fromEntries(Object.entries(s.suite.projectDetails).filter(([pid])=>assigned.has(pid)).map(([pid,d])=>[pid,roleFor(actor,pid)==='client'?{...detailDefaults(),latitude:d.latitude,longitude:d.longitude,currency:d.currency,fxKesPerUnit:d.fxKesPerUnit,fxAsOf:d.fxAsOf}:d]));s.suite.identities={};s.suite.commandFingerprints={};s.commandIds=[];if(!staffAllowed)s.suite.materials=[];

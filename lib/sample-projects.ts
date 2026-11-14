@@ -1,4 +1,4 @@
-import { addDays, dateKey, monday } from './domain';
+import { addDays, dateKey, monday, type Project } from './domain';
 import { fundingCategories, linkFunding, saveFinanceReview, saveReceiptPlan, type FundingCategory } from './project-finance';
 import type { ClientReceipt, SuiteState } from './suite-types';
 
@@ -65,6 +65,7 @@ const comparisonSamples: SampleProject[] = [
   },
 ];
 
+export const isFinanceSample = (project: Project) => project.demo && !project.sampleWalkthrough;
 export const sampleProjectCount = comparisonSamples.length + 1;
 const inCents = (shillings: number) => shillings * 100;
 

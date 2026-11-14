@@ -1,7 +1,7 @@
 import { DomainError, type Command } from '../lib/domain';
 import { authorize, clientView, filterState, roleFor } from '../lib/security';
 import { enabled, executeSuite, get, normalizeState } from '../lib/suite';
-import { addSampleComparisonProjects, sampleProjectCount } from '../lib/sample-projects';
+import { addSampleComparisonProjects, isFinanceSample, sampleProjectCount } from '../lib/sample-projects';
 import type { Actor, SuiteState } from '../lib/suite-types';
 import { openDemoFiles } from './files';
 import { addSampleFinance, principal, sampleWorkspace } from './sample';
@@ -30,7 +30,7 @@ export async function createDemoRuntime() {
         const previousCount = state.projects.length;
         current = normalizeState(state);
         if (!state.suite.finance) addSampleFinance(current);
-        const sampleProjects = current.projects.filter(project => project.demo);
+        const sampleProjects = current.projects.filter(isFinanceSample);
         const residence = sampleProjects[0];
         if (residence && sampleProjects.length < sampleProjectCount) {
           addSampleComparisonProjects(current, residence.id, principal.id, new Date().toISOString());
@@ -67,7 +67,7 @@ export async function createDemoRuntime() {
     const role = client ? 'client' : previewRole;
     if (role === 'admin') return principal;
     const project = state.projects.find(item => item.id === (client || params.get('project')))
-      || state.projects.find(item => item.demo);
+      || state.projects.find(isFinanceSample);
     const names = { client: 'Sample client', pm: 'Demo PM / QS', accounts: 'Demo Accounts', finance: 'Demo Finance' };
     return {
       id: 'demo-' + role,

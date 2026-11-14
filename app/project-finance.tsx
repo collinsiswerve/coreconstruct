@@ -12,6 +12,7 @@ import { projectFinancials } from '../lib/suite';
 import type { Actor, ClientReceipt, Role, SuiteState } from '../lib/suite-types';
 import { SuiteForm, type FormField, type SuiteFormSpec } from './suite-form';
 import { Badge } from './ui';
+import { isFinanceSample } from '../lib/sample-projects';
 import { useWorkspaceRuntime } from './workspace-runtime';
 
 const categories = Object.entries(fundingCategories);
@@ -48,7 +49,7 @@ export function SampleProjectComparison({ state, actor, projectId, selectProject
   state: SuiteState; actor: Actor; projectId: string; selectProject: (id: string) => void;
 }) {
   const samples = state.projects
-    .filter(project => project.demo && (actor.role === 'admin' || actor.projectRoles[project.id] === 'finance'))
+    .filter(project => isFinanceSample(project) && (actor.role === 'admin' || actor.projectRoles[project.id] === 'finance'))
     .sort((a, b) => a.contractCents - b.contractCents);
   if (samples.length < 2) return null;
 

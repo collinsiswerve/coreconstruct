@@ -146,3 +146,20 @@
 .boq-setup-details summary { cursor: pointer; font-weight: 600; }
 .boq-setup-details[open] summary { margin-bottom: 10px; }
 .boq-setup-status { padding: 0 22px 14px; color: var(--ink); }
+
+.operations-review { display: grid; gap: 12px; }
+.operations-review > p { margin: 0; }
+.operations-review-grid, .operations-totals { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,150px),1fr)); gap: 10px; margin: 0; }
+.operations-review-grid > div, .operations-totals { margin-bottom: 16px; }
+.operations-totals > div { display: grid; gap: 5px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; }
+.operations-totals { margin-bottom: 16px; }
+.operations-totals > div { background: var(--paper); }
+.operations-review-grid dt, .operations-totals dt { color: var(--muted); font-size: 12px; }
+.operations-review-grid dd, .operations-totals dd { margin: 0; color: var(--ink); font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.operations-totals dd { font-size: clamp(16px,2vw,21px); }
+.operations-evidence { display: grid; gap: 8px; list-style: none; margin: 0; padding: 0; }
+.operations-evidence li { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--line); padding: 6px 0; }
+.operations-match-message { margin: 0; }
+.operations-match-message ul { margin: 0; padding-left: 16px; }
+.operations-walkthrough { margin-bottom: 16px; }
+.operations-walkthrough .panel-heading { flex-wrap: wrap; gap: 10px; }
