@@ -145,9 +145,13 @@ export function ProjectFinance({ state, project, role, organizationId, saving, e
   const contract = allowProfit ? projectFinancials(state, projectId).contract : 0;
   const needsReview = review && forecastNeedsReview(state, project, review, contract);
   const received = allowLedger ? receiptTotal(state, projectId) : 0;
+  const openingCash = project.opening ?? project.openingCash;
+  const openingReceived = openingCash?.clientReceivedCents ?? 0;
+  const totalReceived = received + openingReceived;
   const paid = projectTotals.cashPaid;
   const funding = state.projectFunding?.[projectId] ?? fundingTotals(state, projectId);
   const active = allowLedger ? activeFunding(state, projectId) : [];
+  const unlinkedSpending = paid - (openingCash?.costsPaidCents ?? 0) - active.reduce((sum, link) => sum + link.amountCents, 0);
   const receipts = state.suite.receipts.filter(receipt => receipt.projectId === projectId).sort((a, b) => b.date.localeCompare(a.date));
   const bills = state.suite.milestones.filter(bill => bill.projectId === projectId && bill.status === 'certified');
   const outflows = allowLedger ? confirmedOutflows(state, projectId) : [];
@@ -268,16 +272,16 @@ export function ProjectFinance({ state, project, role, organizationId, saving, e
         <Card title="Forecast at completion" amount={figures?.forecastProfit ?? null} detail={forecastDetail} signed icon={<ArrowUpRight size={16} />} />
       </> : role === 'pm' ? <>
         <Card title="Internal allowance" amount={projectFinancials(state, projectId).allowance} detail="Includes accepted cost variations" icon={<Wallet size={16} />} />
-        <Card title="Approved costs" amount={projectTotals.incurred} detail="Approved wagebills and expenses" icon={<BarChart3 size={16} />} />
+        <Card title="Approved costs" amount={projectTotals.incurred} detail={project.opening ? 'Includes opening incurred costs' : 'Approved wagebills and expenses'} icon={<BarChart3 size={16} />} />
         <Card title="Open purchase commitments" amount={openCommitments(state, projectId)} detail="Approved orders awaiting invoices" icon={<ArrowUpRight size={16} />} />
       </> : <>
-        <Card title="Client cash received" amount={received} detail="Active confirmed receipts" icon={<ArrowDownLeft size={16} />} />
-        <Card title="Cash paid out" amount={paid} detail="Confirmed payments and advances" icon={<ArrowUpRight size={16} />} />
+        <Card title="Client cash received" amount={totalReceived} detail={openingReceived ? 'Confirmed receipts and opening payments' : 'Active confirmed receipts'} icon={<ArrowDownLeft size={16} />} />
+        <Card title="Cash paid out" amount={paid} detail={openingCash?.costsPaidCents ? 'Includes opening paid costs' : 'Confirmed payments and advances'} icon={<ArrowUpRight size={16} />} />
       </>}
-      {allowLedger && <Card title="Tracked cash position" amount={received - paid} detail={kes(received) + ' received · ' + kes(paid) + ' paid out'} signed icon={<Wallet size={16} />} />}
+      {allowLedger && <Card title="Tracked cash position" amount={totalReceived - paid} detail={kes(totalReceived) + ' received · ' + kes(paid) + ' paid out'} signed icon={<Wallet size={16} />} />}
     </section>
 
-    {allowLedger && <Panel title="Client funds" description="How recorded client receipts are used">
+    {allowLedger && <Panel title="Client funds" description={openingReceived ? 'Allocations for individual receipts recorded in CoreConstruct' : 'How recorded client receipts are used'}>
       <ClientFundsChart received={received} funding={funding} />
     </Panel>}
 
@@ -309,7 +313,7 @@ export function ProjectFinance({ state, project, role, organizationId, saving, e
     </Panel>
 
     {allowLedger && <>
-      <Panel title="Client billing register" description="Approved fee invoices and payment certificates"
+      <Panel title="Client billing register" description={bills.some(bill => bill.opening) ? 'Approved billing and the amount carried forward at cutoff' : 'Approved fee invoices and payment certificates'}
         action={manageReceipts && <button className="btn" onClick={recordBill}><Plus size={15} />Record billing item</button>}>
         {bills.length ? <div className="table-scroll"><table><thead><tr><th>Billing item</th><th>Due</th><th>Billed</th><th>Receipts applied</th><th>Balance</th></tr></thead>
           <tbody>{bills.map(bill => {
@@ -320,7 +324,7 @@ export function ProjectFinance({ state, project, role, organizationId, saving, e
 
       <Panel title="Client receipts" description="Open a receipt breakdown to see billing applications, allocations and spending"
         action={manageReceipts && <button className="btn primary" onClick={issueReceipt}><Plus size={15} />Record client receipt</button>}>
-        {paid > 0 && <div className="finance-notice">{kes(paid - active.reduce((sum, link) => sum + link.amountCents, 0))} paid out without a receipt funding link.</div>}
+        {unlinkedSpending > 0 && <div className="finance-notice">{kes(unlinkedSpending)} paid out without a receipt funding link.</div>}
         {receipts.map(receipt => {
           const plan = state.suite.finance.plans[receipt.id];
           const links = active.filter(link => link.receiptId === receipt.id);

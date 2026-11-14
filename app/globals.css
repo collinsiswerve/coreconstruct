@@ -123,3 +123,26 @@
   .finance-receipt-body { padding: 0 15px 16px; }
   .finance-role-select { max-width: 125px; }
 }
+.boq-setup-panel { min-width: 0; }
+.boq-setup-panel .panel-heading { flex-wrap: wrap; gap: 12px; }
+.boq-setup-body { display: grid; gap: 14px; padding: 0 22px 20px; }
+.boq-opening-form { display: grid; gap: 14px; }
+.boq-opening-form[hidden] { display: none; }
+.boq-setup-fields, .boq-setup-totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 185px), 1fr)); gap: 12px; }
+.boq-setup-fields > .field, .boq-setup-fields input, .boq-setup-fields select { min-width: 0; width: 100%; }
+.boq-setup-fields .field { margin-bottom: 0; }
+.boq-column-map { min-width: 0; margin: 0; border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+.boq-column-map legend { padding: 0 6px; font-weight: 600; }
+.boq-setup-body h3 { margin: 0; font-size: 14px; font-weight: 600; }
+.boq-setup-source { margin: 0; overflow-wrap: anywhere; }
+.boq-setup-totals { margin: 0; }
+.boq-setup-totals div { display: grid; gap: 5px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; }
+.boq-setup-totals dt { color: var(--muted); font-size: 12px; }
+.boq-setup-totals dd { margin: 0; font-size: 17px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.boq-setup-issues { display: block; margin: 0; }
+.boq-setup-issues ul { margin: 6px 0; padding-left: 18px; }
+.boq-setup-preview { max-height: 320px; border: 1px solid var(--line); border-radius: 8px; }
+.boq-setup-preview td:nth-child(2) { min-width: 150px; max-width: 300px; white-space: normal; overflow-wrap: anywhere; }
+.boq-setup-details summary { cursor: pointer; font-weight: 600; }
+.boq-setup-details[open] summary { margin-bottom: 10px; }
+.boq-setup-status { padding: 0 22px 14px; color: var(--ink); }

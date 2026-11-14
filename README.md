@@ -23,7 +23,7 @@ M-Pesa payouts, bank reconciliation, WhatsApp/email delivery, eTIMS submission, 
 
 ## Start testing
 
-Use the [test guide](docs/PILOT_CHECKLIST.md) with one project and fictional inputs first. Load the sample project from the workspace if you want to explore the original labour/expense screens. The new procurement/document flows require your own test uploads and a BOQ; [sample BOQ](public/templates/boq-import.csv) is included.
+Use the [test guide](docs/PILOT_CHECKLIST.md) with one project and fictional inputs first. Load the sample project from the workspace if you want to explore the original labour/expense screens. The new procurement/document flows require your own test uploads and a BOQ; [Excel BOQ template](public/templates/boq-import.xlsx) and [CSV template](public/templates/boq-import.csv) are included.
 
 Keep source code in GitHub and operational records in private storage. This repository intentionally excludes credentials, database contents, uploaded documents and exports. Its public visibility does not make your hosted workspace public.
 

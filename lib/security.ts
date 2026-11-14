@@ -1,4 +1,4 @@
-import { DomainError, type Command } from './domain';
+import { DomainError, paidFor, type Command } from './domain';
 import { detailDefaults, enabled, get, normalizeState, projectFinancials } from './suite';
 import type { Actor, Module, Role, SuiteState } from './suite-types';
 import { amountApplied, canViewProfit, canViewProjectFinance, canViewReceiptLedger, fundingTotals } from './project-finance';
@@ -28,7 +28,7 @@ export function projectForCommand(s:SuiteState,c:Command):string|undefined {
  return typeof p.projectId==='string'?get(s.projects,p.projectId,'Project').id:undefined;
 }
 export function roleFor(actor:Actor,projectId?:string):Role { if(actor.role==='admin')return 'admin';if(!projectId)return actor.role;const role=actor.projectRoles[projectId];if(!role)throw new DomainError('You are not assigned to this project.',403);return role; }
-const moduleFor:Record<string,Module>={design:'design',drawing:'design',boq:'boq',worker:'wages',attendance:'wages',wagebill:'wages',advance:'wages',piecework:'wages',material:'materials',order:'materials',delivery:'materials',stock:'materials',invoice:'materials',variation:'variations',media:'portal',report:'portal',milestone:'portal'};
+const moduleFor:Record<string,Module>={design:'design',drawing:'design',boq:'boq',opening:'boq',worker:'wages',attendance:'wages',wagebill:'wages',advance:'wages',piecework:'wages',material:'materials',order:'materials',delivery:'materials',stock:'materials',invoice:'materials',variation:'variations',media:'portal',report:'portal',milestone:'portal'};
 const grants:Record<Role,Set<string>>={
  admin:new Set(['*']),
  pm:new Set(['project.update','project.configure','worker.create','worker.register','worker.update','worker.identity.set','attendance.save','attendance.remove','wagebill.submit','wagebill.approve','wagebill.return','advance.create','advance.reverse','piecework.approve','expense.create','expense.revise','expense.approve','expense.return','payment.record','payment.reverse','report.save','report.publish','boq.import','boq.progress','material.create','order.create','order.revise','order.approve','order.return','delivery.submit','delivery.approve','delivery.return','stock.move','stock.return','invoice.submit','invoice.approve','invoice.return','invoice.revise','invoice.reverse','drawing.add','drawing.issue','drawing.publish','drawing.acknowledge','media.capture','media.publish','variation.create','variation.revise','variation.send','variation.withdraw','variation.recordClientDecision','action.create','action.close','milestone.create','milestone.certify']),
@@ -53,10 +53,24 @@ export function filterState(original:SuiteState,actor:Actor):SuiteState {
  const receiptLedger=(pid:string)=>canViewReceiptLedger(roleFor(actor,pid));
  const accountOperations=(pid:string)=>financial(pid)||receiptLedger(pid);
  const field=(pid:string)=>['admin','pm','foreman'].includes(roleFor(actor,pid)),design=(pid:string)=>['admin','pm','architect','foreman'].includes(roleFor(actor,pid));
- for(const p of s.projects){const role=roleFor(actor,p.id);if(!financial(p.id)){p.budgetCents=0;if(role!=='client')p.contractCents=0;}const d=s.suite.projectDetails[p.id];if(d){if(!canViewProfit(role))d.forecastRemainingCents=0;if(!financial(p.id)){d.managementFeeBps=0;if(role==='foreman'){d.clientEmail='';d.clientPhone='';}}}}
+ for(const p of s.projects){const role=roleFor(actor,p.id);if(!financial(p.id)){
+   if(role==='accounts' && p.opening) {
+     p.openingCash={ clientReceivedCents:p.opening.clientReceivedCents, costsPaidCents:p.opening.costsPaidCents };
+   }
+   delete p.opening;
+   p.budgetCents=0;
+   if(role!=='client')p.contractCents=0;
+ }const d=s.suite.projectDetails[p.id];if(d){if(!canViewProfit(role))d.forecastRemainingCents=0;if(!financial(p.id)){d.managementFeeBps=0;if(role==='foreman'){d.clientEmail='';d.clientPhone='';}}}}
  const ids=<T extends {projectId:string}>(items:T[],allowed:(pid:string)=>boolean=()=>true)=>items.filter(x=>assigned.has(x.projectId)&&allowed(x.projectId));
  s.attendance=ids(s.attendance,field);s.wagebills=ids(s.wagebills,pid=>field(pid)||canViewProfit(roleFor(actor,pid)));const paidExpenses=new Set(s.payments.filter(payment=>payment.targetType==='expense'&&!payment.reversedAt).map(payment=>payment.targetId));
- s.expenses=ids(s.expenses,pid=>field(pid)||accountOperations(pid)).filter(expense=>roleFor(actor,expense.projectId)!=='accounts'||paidExpenses.has(expense.id)).map(expense=>roleFor(actor,expense.projectId)==='accounts'?{...expense,receiptUrl:'',receiptFileId:undefined}:expense);s.advances=ids(s.advances,accountOperations);s.payments=ids(s.payments,accountOperations);
+ s.expenses=ids(s.expenses,pid=>field(pid)||accountOperations(pid)).filter(expense=>{
+   const role=roleFor(actor,expense.projectId);
+   if(role==='accounts')return paidExpenses.has(expense.id);
+   return role!=='foreman'||!expense.opening;
+ }).map(expense=>roleFor(actor,expense.projectId)==='accounts'?{
+   ...expense,receiptUrl:'',receiptFileId:undefined,
+   ...(expense.opening?{receiptRef:'',amountCents:paidFor(s,'expense',expense.id)}:{}),
+ }:expense);s.advances=ids(s.advances,accountOperations);s.payments=ids(s.payments,accountOperations);
  const staffAllowed=s.projects.some(p=>field(p.id))||actor.role==='admin';if(!staffAllowed)s.workers=[];
  s.reports=ids(s.reports,pid=>roleFor(actor,pid)!=='client').concat(ids(original.reports,pid=>roleFor(actor,pid)==='client').filter(r=>s.suite.publishedWeeks[r.projectId+':'+r.weekStart]===r.updatedAt));s.suite.boq=ids(s.suite.boq,field).map(b=>financial(b.projectId)?b:{...b,clientRateCents:0,allowanceCents:0,labourAllowanceCents:0});s.suite.orders=ids(s.suite.orders,pid=>field(pid)||financial(pid));s.suite.deliveries=ids(s.suite.deliveries,field);s.suite.stock=ids(s.suite.stock,field);s.suite.invoices=ids(s.suite.invoices,financial);
  s.suite.drawings=ids(s.suite.drawings,design);s.suite.media=ids(s.suite.media,design);s.suite.variations=ids(s.suite.variations,pid=>roleFor(actor,pid)!=='client').map(v=>financial(v.projectId)?v:{...v,internalDeltaCents:0,externalEvidence:undefined,decisionNote:undefined});s.suite.receipts=ids(s.suite.receipts,accountOperations);s.suite.milestones=ids(s.suite.milestones,accountOperations);s.suite.actions=ids(s.suite.actions,pid=>roleFor(actor,pid)!=='client');

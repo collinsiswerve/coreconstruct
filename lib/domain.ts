@@ -1,10 +1,12 @@
-export type Project = { id: string; name: string; location: string; client: string; budgetCents: number; contractCents: number; mode: 'fixed' | 'open'; stage: string; progress: number; demo: boolean; createdAt: string; summary?: string; nextSteps?: string; risks?: string; reportUpdatedAt?: string };
+import type { OpeningBalances } from './opening-balances';
+
+export type Project = { id: string; name: string; location: string; client: string; budgetCents: number; contractCents: number; mode: 'fixed' | 'open'; stage: string; progress: number; demo: boolean; createdAt: string; summary?: string; nextSteps?: string; risks?: string; reportUpdatedAt?: string; opening?: OpeningBalances; openingCash?: Pick<OpeningBalances, 'clientReceivedCents' | 'costsPaidCents'> };
 export type Worker = { id: string; name: string; trade: string; rateCents: number; active: boolean; demo: boolean };
 export type Attendance = { id: string; projectId: string; workerId: string; date: string; units: number; rateCents: number; agreedRateCents?: number; boqItemId?:string; task: string };
 export type Advance = { id: string; projectId: string; workerId: string; date: string; amountCents: number; reference: string; allocations: { billId: string; amountCents: number }[]; reversedAt?: string; reason?: string };
 export type WageEntry = { workerId: string; name: string; units: number; grossCents: number; advanceCents: number; payableCents: number };
 export type Wagebill = { id: string; projectId: string; weekStart: string; weekEnd: string; revision: number; status: 'submitted' | 'approved' | 'returned'; entries: WageEntry[]; grossCents: number; advanceCents: number; payableCents: number; submittedAt: string; approvedAt?: string; reason?: string };
-export type Expense = { id: string; projectId: string; date: string; description: string; category: string; amountCents: number; receiptRef: string; receiptUrl: string; receiptFileId?:string; status: 'submitted' | 'approved' | 'returned'; reason?: string; approvedAt?: string };
+export type Expense = { id: string; projectId: string; date: string; description: string; category: string; amountCents: number; receiptRef: string; receiptUrl: string; receiptFileId?:string; opening?: true; status: 'submitted' | 'approved' | 'returned'; reason?: string; approvedAt?: string };
 export type Payment = { id: string; projectId: string; targetType: 'wagebill' | 'expense'; targetId: string; amountCents: number; date: string; method: string; reference: string; reversedAt?: string; reason?: string };
 export type ReportNote = { id: string; projectId: string; weekStart: string; summary: string; nextSteps: string; risks: string; progress: number; stage: string; updatedAt: string };
 export type AuditEvent = { id: string; at: string; actor: string; action: string; projectId?: string; description: string; before?: unknown };
@@ -29,21 +31,28 @@ function validDate(v: unknown): string { const s = String(v ?? ''); if (!/^\d{4}
 function amount(v: unknown, allowZero = false) { const n = moneyToCents(v); if (!allowZero && n <= 0) throw new DomainError('The amount must be greater than zero.'); return n; }
 const find = <T extends { id: string }>(items: T[], id: unknown, name: string): T => { const x = items.find(v => v.id === id); if (!x) throw new DomainError(`${name} was not found.`, 404); return x; };
 export function paidFor(s: State, type: string, id: string): number { return s.payments.filter(p => p.targetType === type && p.targetId === id && !p.reversedAt).reduce((n, p) => n + p.amountCents, 0); }
+export function assertAfterOpening(project: Project, date: string) {
+  if (project.opening && date <= project.opening.asOf) {
+    throw new DomainError(`Use a date after the opening cutoff (${project.opening.asOf}). Earlier amounts belong to opening balances.`);
+  }
+}
 export function totals(s: State, projectId: string) {
+  const project = s.projects.find(row => row.id === projectId);
   const bills = s.wagebills.filter(w => w.projectId === projectId && w.status === 'approved');
   const costs = s.expenses.filter(e => e.projectId === projectId && e.status === 'approved');
   const advances = s.advances.filter(a => a.projectId === projectId && !a.reversedAt);
   const labour = bills.reduce((n, b) => n + b.grossCents, 0);
-  const expenses = costs.reduce((n, e) => n + e.amountCents, 0);
+  const expenses = costs.filter(e => !e.opening).reduce((n, e) => n + e.amountCents, 0);
   const outstanding = bills.reduce((n, b) => n + b.payableCents - paidFor(s, 'wagebill', b.id), 0) + costs.reduce((n, e) => n + e.amountCents - paidFor(s, 'expense', e.id), 0);
-  const cashPaid = s.payments.filter(p => p.projectId === projectId && !p.reversedAt).reduce((n, p) => n + p.amountCents, 0) + advances.reduce((n, a) => n + a.amountCents, 0);
+  const cashPaid = s.payments.filter(p => p.projectId === projectId && !p.reversedAt).reduce((n, p) => n + p.amountCents, 0) + advances.reduce((n, a) => n + a.amountCents, 0) + (project?.opening?.costsPaidCents ?? project?.openingCash?.costsPaidCents ?? 0);
   const unallocatedAdvances = advances.reduce((n, a) => n + a.amountCents - a.allocations.filter(x => bills.some(b => b.id === x.billId)).reduce((k, x) => k + x.amountCents, 0), 0);
-  return { labour, expenses, incurred: labour + expenses, outstanding, cashPaid, unallocatedAdvances };
+  return { labour, expenses, incurred: labour + expenses + (project?.opening?.costsIncurredCents ?? 0), outstanding, cashPaid, unallocatedAdvances };
 }
 export function buildWageEntries(s: State, projectId: string, weekStart: string): WageEntry[] {
   const end = addDays(weekStart, 6);
-  const rows = s.attendance.filter(a => a.projectId === projectId && a.date >= weekStart && a.date <= end);
-  const piecework = ((s as State & { suite?: { piecework?: { projectId: string; weekStart: string; workerId: string; amountCents: number }[] } }).suite?.piecework || []).filter(p => p.projectId === projectId && p.weekStart === weekStart);
+  const cutoff = s.projects.find(project => project.id === projectId)?.opening?.asOf ?? '';
+  const rows = s.attendance.filter(a => a.projectId === projectId && a.date >= weekStart && a.date <= end && a.date > cutoff);
+  const piecework = ((s as State & { suite?: { piecework?: { projectId: string; weekStart: string; workerId: string; amountCents: number }[] } }).suite?.piecework || []).filter(p => p.projectId === projectId && p.weekStart === weekStart && p.weekStart > cutoff);
   return [...new Set([...rows.map(a => a.workerId), ...piecework.map(p => p.workerId)])].map(workerId => {
     const mine = rows.filter(a => a.workerId === workerId);
     const grossCents = mine.reduce((n, a) => n + Math.round(a.rateCents * a.units / 2), 0) + piecework.filter(p => p.workerId === workerId).reduce((n, p) => n + p.amountCents, 0);
@@ -85,6 +94,7 @@ export function applyCommand(original: State, command: Command, actor: string, a
     }
     case 'attendance.save': {
       const x = project(), worker = find(s.workers, p.workerId, 'Worker'), date = validDate(p.date), units = Number(p.units);
+      assertAfterOpening(x, date);
       if (!worker.active) throw new DomainError('This worker is inactive.');
       if (worker.demo !== x.demo) throw new DomainError('Sample workers are reserved for the sample project. Add your own workers for live projects.');
       if (![1, 2].includes(units)) throw new DomainError('Choose a half-day or full day.');
@@ -104,7 +114,7 @@ export function applyCommand(original: State, command: Command, actor: string, a
     case 'advance.create': {
       const x = project(), worker = find(s.workers, p.workerId, 'Worker');
       if (worker.demo !== x.demo) throw new DomainError('Choose a worker for this project.');
-      const date = validDate(p.date); if (date > dateKey(new Date(at))) throw new DomainError('A confirmed advance cannot have a future date.');
+      const date = validDate(p.date); assertAfterOpening(x, date); if (date > dateKey(new Date(at))) throw new DomainError('A confirmed advance cannot have a future date.');
       const reference = text(p.reference, 'Payment reference', 100);
       if ([...s.advances.filter(a => !a.reversedAt), ...s.payments.filter(a => !a.reversedAt)].some(a => a.reference.toUpperCase() === reference.toUpperCase())) throw new DomainError('This payment reference is already recorded.');
       s.advances.push({ id: makeId(), projectId: x.id, workerId: worker.id, date, amountCents: amount(p.amount), reference, allocations: [] }); description = `Recorded a confirmed advance for ${worker.name}`; break;
@@ -121,6 +131,7 @@ export function applyCommand(original: State, command: Command, actor: string, a
       if (bill && bill.status !== 'returned') throw new DomainError('A wagebill has already been submitted for this week.');
       before = bill ? structuredClone(bill) : undefined;
       const id = bill?.id || makeId(), end = addDays(start, 6);
+      assertAfterOpening(x, end);
       if (end > dateKey(new Date(at)) && p.confirmCurrentWeek !== true) throw new DomainError('Confirm that attendance for this current week is complete before submitting.');
       for (const a of s.advances) a.allocations = a.allocations.filter(v => v.billId !== id);
       const entries = buildWageEntries(s, x.id, start); if (!entries.length) throw new DomainError('Record attendance for this week first.');
@@ -148,6 +159,7 @@ export function applyCommand(original: State, command: Command, actor: string, a
     case 'expense.create': case 'expense.revise': {
       const x = project(), url = optional(p.receiptUrl, 1000); if (url && (!URL.canParse(url) || new URL(url).protocol !== 'https:')) throw new DomainError('Receipt links must use https://.');
       const value: Expense = { id: makeId(), projectId: x.id, date: validDate(p.date), description: text(p.description, 'Description', 160), category: text(p.category, 'Category', 60), amountCents: amount(p.amount), receiptRef: optional(p.receiptRef, 100), receiptUrl: url, receiptFileId: typeof p.receiptFileId==='string'?p.receiptFileId:undefined, status: 'submitted' };
+      assertAfterOpening(x, value.date);
       if (command.type === 'expense.revise') { const old = find(s.expenses, p.expenseId, 'Expense'); if (old.projectId !== x.id || old.status !== 'returned') throw new DomainError('Only a returned expense can be revised.'); before = { ...old }; Object.assign(old, value, { id: old.id, reason: undefined, approvedAt: undefined }); }
       else s.expenses.push(value);
       description = `${command.type === 'expense.revise' ? 'Resubmitted' : 'Submitted'} expense: ${value.description}`; break;
@@ -156,7 +168,7 @@ export function applyCommand(original: State, command: Command, actor: string, a
       const x = find(s.expenses, p.expenseId, 'Expense'); projectId = x.projectId; if (x.status !== 'submitted') throw new DomainError('Only a submitted expense can be approved.'); before = { ...x }; x.status = 'approved'; x.approvedAt = at; description = `Approved expense: ${x.description}`; break;
     }
     case 'expense.return': {
-      const x = find(s.expenses, p.expenseId, 'Expense'); projectId = x.projectId; if (x.status === 'returned') throw new DomainError('This expense is already returned.'); if (paidFor(s, 'expense', x.id) > 0) throw new DomainError('Reverse or reconcile its payments before returning this expense.'); before = { ...x }; x.status = 'returned'; x.reason = text(p.reason, 'Reason', 240); description = `Returned expense: ${x.description}`; break;
+      const x = find(s.expenses, p.expenseId, 'Expense'); projectId = x.projectId; if (x.opening) throw new DomainError('Use the opening balances form to correct this amount.'); if (x.status === 'returned') throw new DomainError('This expense is already returned.'); if (paidFor(s, 'expense', x.id) > 0) throw new DomainError('Reverse or reconcile its payments before returning this expense.'); before = { ...x }; x.status = 'returned'; x.reason = text(p.reason, 'Reason', 240); description = `Returned expense: ${x.description}`; break;
     }
     case 'payment.record': {
       const targetType = p.targetType === 'wagebill' ? 'wagebill' : p.targetType === 'expense' ? 'expense' : null; if (!targetType) throw new DomainError('Choose a valid payment target.');
@@ -165,6 +177,7 @@ export function applyCommand(original: State, command: Command, actor: string, a
       const total = targetType === 'wagebill' ? (target as Wagebill).payableCents : (target as Expense).amountCents, value = amount(p.amount);
       if (value > total - paidFor(s, targetType, target.id)) throw new DomainError('The payment exceeds the remaining balance.');
       const reference = text(p.reference, 'Payment reference', 100), date = validDate(p.date), method = text(p.method, 'Payment method', 30);
+      assertAfterOpening(find(s.projects, target.projectId, 'Project'), date);
       if (!['M-Pesa', 'Bank transfer', 'Cash'].includes(method)) throw new DomainError('Choose a supported payment method.');
       if (date > dateKey(new Date(at))) throw new DomainError('A confirmed payment cannot have a future date.');
       if ([...s.payments.filter(v => !v.reversedAt), ...s.advances.filter(v => !v.reversedAt)].some(v => v.reference.toUpperCase() === reference.toUpperCase())) throw new DomainError('This payment reference is already recorded.');

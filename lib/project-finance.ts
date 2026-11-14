@@ -83,8 +83,11 @@ export function reviewFigures(review: FinanceReview) {
 
 export function approvedCostThrough(s: SuiteState, projectId: string, asOf: string) {
   const payroll = s.wagebills.filter(bill => bill.projectId === projectId && bill.status === 'approved' && (bill.weekEnd <= asOf || !!bill.approvedAt && dateKey(new Date(bill.approvedAt)) <= asOf));
-  const expenses = s.expenses.filter(expense => expense.projectId === projectId && expense.status === 'approved' && expense.date <= asOf);
-  return payroll.reduce((sum, bill) => sum + bill.grossCents, 0) + expenses.reduce((sum, expense) => sum + expense.amountCents, 0);
+  const expenses = s.expenses.filter(expense => expense.projectId === projectId && expense.status === 'approved' && !expense.opening && expense.date <= asOf);
+  const opening = s.projects.find(project => project.id === projectId)?.opening;
+  const openingCost = opening && opening.asOf <= asOf ? opening.costsIncurredCents : 0;
+  return payroll.reduce((sum, bill) => sum + bill.grossCents, 0)
+    + expenses.reduce((sum, expense) => sum + expense.amountCents, 0) + openingCost;
 }
 
 export function receiptTotal(s: SuiteState, projectId: string) {
