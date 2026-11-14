@@ -4,6 +4,10 @@ This build uses the CoreConstruct workspace and business rules with fictional Ar
 
 Use **Pilot results → Open sample weekly close** for the end-to-end sample. The app's signed-in role, offline retry and records-and-files recovery checks use the hosted application routes and fresh test storage.
 
+Use [Project portfolio](https://collinsiswerve.github.io/coreconstruct/?demo=portfolio&view=portfolio) for M6. The ten fictional projects started between 2022 and 2026. Each has a project workspace, a client page, four weekly reports, certificates and receipts, a priced BOQ, and a sample drawing issue history. The documentation and geometry illustrate the workflow. A concept render helps identify each project.
+
+The portfolio stores demo changes separately in the browser, including changes made from a sample client page. Reset the portfolio from an open project to restore the fictional records. The production build also packages the same browser demo at `/portfolio/` in the private app.
+
 ## Build
 
 Requires the Node and pnpm versions in the parent repository. From the repository root:

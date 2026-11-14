@@ -8,8 +8,9 @@ export function moduleLoader(fixture={}){
  globalThis.__coreconstructTestFixture=fixture;
  const target=resolve(root,'.test-runtime',crypto.randomUUID());mkdirSync(target,{recursive:true});
  process.on('exit',()=>rmSync(target,{recursive:true,force:true}));const compiled=new Map();
- function build(file){file=resolve(root,file);if(compiled.has(file))return compiled.get(file);const out=resolve(target,relative(root,file).replace(/\.tsx?$/,'.mjs'));compiled.set(file,out);mkdirSync(dirname(out),{recursive:true});
+ function build(file){file=resolve(root,file);if(compiled.has(file))return compiled.get(file);const out=resolve(target,relative(root,file).replace(/\.(tsx?|json)$/,'.mjs'));compiled.set(file,out);mkdirSync(dirname(out),{recursive:true});
  let source=file.endsWith('/app/chatgpt-auth.ts')?'export const getChatGPTUser=async()=>globalThis.__coreconstructTestFixture.user;':readFileSync(file,'utf8');
+ if(file.endsWith('.json'))source='export default '+source;
  source=source.replace(/import\s*\{\s*env\s*\}\s*from\s*['"]cloudflare:workers['"];?/g,'const env=globalThis.__coreconstructTestFixture.env;');
  let js=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext,jsx:ts.JsxEmit.ReactJSX}}).outputText;
  js=js.replace(/(from\s*['"])(\.[^'"]+)(['"])/g,(_,a,spec,b)=>{let dep=resolve(dirname(file),spec);if(!existsSync(dep))dep+=existsSync(dep+'.ts')?'.ts':'.tsx';return a+pathToFileURL(build(dep)).href+b;});writeFileSync(out,js);return out;

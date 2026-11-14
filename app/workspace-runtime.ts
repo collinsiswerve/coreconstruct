@@ -7,6 +7,7 @@ type WorkspaceRuntime = {
     reset: () => Promise<void>;
     role: string;
     switchRole: (role: string, projectId: string, view?: string) => void;
+    portfolio?: { href: string; asOf: string };
   };
 };
 

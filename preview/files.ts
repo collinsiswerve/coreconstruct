@@ -9,12 +9,12 @@ function requestResult<T>(request: IDBRequest<T>): Promise<T> {
   });
 }
 
-export async function openDemoFiles() {
+export async function openDemoFiles(suffix = '') {
   let database: IDBDatabase | undefined;
   const files = new Map<string, string>();
 
   try {
-    const request = indexedDB.open(databaseName, 1);
+    const request = indexedDB.open(databaseName + suffix, 1);
     request.onupgradeneeded = () => request.result.createObjectStore('files', { keyPath: 'id' });
     database = await requestResult(request);
     const saved = await requestResult<StoredFile[]>(database.transaction('files').objectStore('files').getAll());

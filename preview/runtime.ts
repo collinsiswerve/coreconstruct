@@ -7,30 +7,37 @@ import { addSampleComparisonProjects, isFinanceSample, sampleProjectCount } from
 import type { Actor, SuiteState } from '../lib/suite-types';
 import { openDemoFiles } from './files';
 import { addSampleFinance, principal, sampleWorkspace } from './sample';
+import { isPortfolioProject, portfolioActor, portfolioAsOf, portfolioFileAsset, portfolioWorkspace } from './portfolio-state';
 
 const storageKey = 'coreconstruct-pages-demo-v1';
 const allowedTypes = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'video/mp4']);
 
 export async function createDemoRuntime() {
   const root = new URL('./', window.location.href);
-  const files = await openDemoFiles();
   const params = new URLSearchParams(window.location.search);
+  const receiptProject = (params.get('receipt') || params.get('receiptPdf') || '').split(':')[0];
+  const drawingProject = (params.get('drawing') || '').split(':')[0];
+  const isPortfolio = root.pathname.endsWith('/portfolio/') || params.get('demo') === 'portfolio' || params.get('view') === 'portfolio' || [params.get('client'), params.get('project'), receiptProject, drawingProject]
+    .some(id => id && isPortfolioProject(id));
+  const storage = isPortfolio ? 'coreconstruct-m6-portfolio-v1' : storageKey;
+  const files = await openDemoFiles(isPortfolio ? '-m6' : '');
   const requestedRole = params.get('as');
   const previewRole = requestedRole === 'pm' || requestedRole === 'accounts' || requestedRole === 'finance' || requestedRole === 'foreman' ? requestedRole : 'admin';
-  let current = sampleWorkspace();
+  let current = isPortfolio ? portfolioWorkspace() : sampleWorkspace();
 
   function save(state: SuiteState) {
     current = state;
-    localStorage.setItem(storageKey, JSON.stringify(state));
+    localStorage.setItem(storage, JSON.stringify(state));
   }
 
   function read() {
-    const raw = localStorage.getItem(storageKey);
+    const raw = localStorage.getItem(storage);
     if (raw) {
       const state = JSON.parse(raw) as SuiteState;
       if (state.schemaVersion === 1 && state.suite?.version === 2) {
         const previousCount = state.projects.length;
         current = normalizeState(state);
+        if (isPortfolio) return current;
         if (!state.suite.finance) addSampleFinance(current);
         const sampleProjects = current.projects.filter(isFinanceSample);
         const residence = sampleProjects[0];
@@ -51,8 +58,26 @@ export async function createDemoRuntime() {
     if (kind === 'api' && type === 'files' && id) {
       const fileId = decodeURIComponent(id);
       const drawing = read().suite.drawings.find(item => item.fileId === fileId);
-      if (drawing) return new URL('?drawing=' + encodeURIComponent(fileId) + (params.get('client') ? '&forClient=' + encodeURIComponent(params.get('client')!) : '')
-        + (params.get('as') ? '&as=' + encodeURIComponent(params.get('as')!) + '&project=' + encodeURIComponent(params.get('project') || '') : ''), root).href;
+      if (drawing) {
+        const query = new URLSearchParams({ drawing: fileId });
+        const client = params.get('client') || params.get('forClient');
+        if (client) query.set('forClient', client);
+        if (params.get('as')) {
+          query.set('as', params.get('as')!);
+          query.set('project', params.get('project') || '');
+        }
+        if (isPortfolio) query.set('demo', 'portfolio');
+        return new URL('?' + query, root).href;
+      }
+      const portfolio = isPortfolio && portfolioFileAsset(fileId);
+      if (portfolio) {
+        const state = read();
+        const projectId = fileId.split(':')[0];
+        const role = roleFor(actorFor(state), projectId);
+        const published = state.suite.media.some(item => item.fileId === fileId && item.published);
+        if (role === 'client' && !published) return '#';
+        return new URL(portfolio, root).href;
+      }
       const sample = sampleEvidenceAsset(fileId);
       return sample ? new URL(sample.slice(1), root).href : files.href(fileId) || '#';
     }
@@ -64,16 +89,21 @@ export async function createDemoRuntime() {
       query.set(kind === 'api' ? 'receiptPdf' : 'receipt', kind === 'api' ? id : type);
       return new URL('?' + query, root).href;
     }
-    if (kind === 'client' && type) return new URL('?client=' + encodeURIComponent(type), root).href;
+    if (kind === 'client' && type) {
+      const query = new URLSearchParams({ client: decodeURIComponent(type) });
+      if (isPortfolio) query.set('demo', 'portfolio');
+      return new URL('?' + query, root).href;
+    }
     return new URL(path.replace(/^\//, ''), root).href;
   }
 
   function actorFor(state: SuiteState): Actor {
     const client = params.get('client') || params.get('forClient');
     const role = client ? 'client' : previewRole;
-    if (role === 'admin') return principal;
-    const project = state.projects.find(item => item.id === (client || params.get('project')))
-      || state.projects.find(isFinanceSample);
+    if (role === 'admin') return isPortfolio ? portfolioActor('admin') : principal;
+    if (isPortfolio) return portfolioActor(role, client || params.get('project') || state.projects[0]?.id);
+    const project = client ? state.projects.find(item => item.id === client)
+      : state.projects.find(item => item.id === params.get('project')) || state.projects.find(isFinanceSample);
     const names = { client: 'Sample client', pm: 'Demo PM / QS', accounts: 'Demo Accounts', finance: 'Demo Finance', foreman: 'Demo foreman' };
     return {
       id: 'demo-' + role,
@@ -103,11 +133,15 @@ export async function createDemoRuntime() {
 
       if (url.pathname === '/api/workspace' && method === 'POST') {
         const command = JSON.parse(String(init?.body)) as Command;
+        if (isPortfolio && command.type.startsWith('demo.') && command.type.endsWith('.load')) {
+          throw new DomainError('The portfolio already has fictional project records.');
+        }
         delete command.payload.nationalId;
         delete command.payload.mpesaPhone;
         delete command.payload.protected;
         authorize(state, command, actor);
-        state = executeSuite(state, command, actor);
+        const syntheticDate = isPortfolio && command.type === 'variation.decide' ? portfolioAsOf + 'T08:00:00.000Z' : undefined;
+        state = executeSuite(state, command, actor, syntheticDate);
         save(state);
         return response();
       }
@@ -134,7 +168,9 @@ export async function createDemoRuntime() {
         const { sampleDrawingBytes } = await import('../lib/sample-drawing-files');
         const sample = sampleDrawingBytes(fileId);
         const uploadedUrl = files.href(fileId);
-        const uploaded = !sample && uploadedUrl ? await fetch(uploadedUrl) : undefined;
+        const portfolio = isPortfolio && portfolioFileAsset(fileId);
+        const source = portfolio ? new URL(portfolio, root).href : uploadedUrl;
+        const uploaded = !sample && source ? await fetch(source) : undefined;
         const raw = sample ?? (uploaded?.ok ? await uploaded.arrayBuffer() : undefined);
         if (!raw) throw new DomainError('Drawing file is unavailable.', 404);
         const { watermarkDrawing } = await import('../lib/documents');
@@ -145,7 +181,7 @@ export async function createDemoRuntime() {
       if (url.pathname === '/api/portal') return Response.json({ links: [] });
       if (url.pathname === '/api/client-view') {
         const projectId = url.searchParams.get('projectId') || '';
-        if (!['admin','pm','client'].includes(roleFor(actor, projectId))) throw new DomainError('Client view is unavailable for this role.', 403);
+        if (!projectId || !['admin','pm','client'].includes(roleFor(actor, projectId))) throw new DomainError('Client view is unavailable for this role.', 403);
         const portal = clientView(state, projectId);
         if (url.searchParams.has('export')) {
           const { exportWeeklyUpdate } = await import('../lib/weekly-download');
@@ -183,19 +219,22 @@ export async function createDemoRuntime() {
     href,
     demo: {
       role: previewRole,
+      ...(isPortfolio && { portfolio: { href: new URL('?demo=portfolio&view=portfolio', root).href, asOf: portfolioAsOf } }),
       switchRole(role: string, projectId: string, currentView?: string) {
         if (role === 'client' && projectId) {
           location.assign(href('/client/' + projectId));
           return;
         }
-        const view = role === 'foreman' || (role === 'admin' || role === 'pm') && currentView === 'design' ? 'design' : 'finance';
+        const view = ['admin','pm'].includes(role) && currentView === 'portfolio' ? 'portfolio'
+          : role === 'foreman' || (role === 'admin' || role === 'pm') && currentView === 'design' ? 'design' : 'finance';
         const query = new URLSearchParams({ view, as: role, project: projectId });
+        if (isPortfolio) query.set('demo', 'portfolio');
         location.assign(new URL('?' + query, root));
       },
       async reset() {
         await files.clear();
-        localStorage.removeItem(storageKey);
-        location.replace(root.href);
+        localStorage.removeItem(storage);
+        location.replace(isPortfolio ? new URL('?demo=portfolio&view=portfolio', root).href : root.href);
       },
     },
   };
