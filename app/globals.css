@@ -276,3 +276,35 @@
   .onboarding-step-actions .btn { white-space: normal; text-align: left; }
   .onboarding-progress { padding: 14px; }
 }
+
+.pilot-scorecard { margin: 22px 0; }
+.pilot-scorecard > .panel-heading { gap: 12px; flex-wrap: wrap; }
+.pilot-scorecard-body { display: grid; gap: 16px; padding: 0 20px 20px; }
+.pilot-scorecard-example { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 0; }
+.pilot-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 0; }
+.pilot-metrics > div { border: 1px solid var(--line); border-radius: 8px; background: var(--paper); padding: 13px; }
+.pilot-metrics dt { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.pilot-metrics dd { font-size: 22px; font-weight: 650; margin: 7px 0; font-variant-numeric: tabular-nums; }
+.pilot-metrics span, .pilot-scorecard-context small { color: var(--muted); font-size: 11px; line-height: 1.55; }
+.pilot-scorecard-context { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.pilot-scorecard-context article { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 13px; border: 1px solid var(--line); border-radius: 8px; }
+.pilot-scorecard-context h3 { font-size: 13px; margin: 0 0 5px; }
+.pilot-scorecard-context p { margin: 0; font-size: 12px; }
+.pilot-cycle-table { border: 1px solid var(--line); border-radius: 8px; }
+.pilot-cycle-table table { min-width: 730px; }
+.pilot-cycle-table caption { font-weight: 650; padding: 10px 14px; text-align: left; }
+.pilot-cycle-table tbody th { text-align: left; font-size: 12px; white-space: nowrap; }
+.pilot-difference summary { color: #925019; font-weight: 650; cursor: pointer; }
+:root[data-theme=dark] .pilot-difference summary { color: #f4c790; }
+.pilot-difference dl { margin: 7px 0 0; }
+.pilot-difference dl div { display: flex; flex-wrap: wrap; gap: 4px 8px; }
+.pilot-difference dd { margin: 0; }
+.pilot-evidence { overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  .pilot-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pilot-scorecard-context { grid-template-columns: 1fr; }
+}
+@media (max-width: 420px) {
+  .pilot-scorecard-body { padding: 0 12px 12px; }
+  .pilot-scorecard-context article { align-items: flex-start; flex-wrap: wrap; }
+}

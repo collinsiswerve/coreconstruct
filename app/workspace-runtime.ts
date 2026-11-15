@@ -10,6 +10,8 @@ type WorkspaceRuntime = {
     switchRole: (role: string, projectId: string, view?: string) => void;
     onboarding?: boolean;
     onboardingHref?: string;
+    scorecard?: { projectId: string };
+    scorecardHref?: string;
     canPreviewRole?: (role: Role, projectId: string) => boolean;
     portfolio?: { href: string; asOf: string };
   };

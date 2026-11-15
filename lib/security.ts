@@ -2,6 +2,7 @@ import { isSupplierInvoiceCost } from './procurement';
 import { DomainError, paidFor, type Command } from './domain';
 import { detailDefaults, enabled, get, normalizeState, projectFinancials } from './suite';
 import type { Actor, Module, Role, SuiteState } from './suite-types';
+import { emptyPilot } from './pilot-scorecard';
 import { amountApplied, canViewProfit, canViewProjectFinance, canViewReceiptLedger, fundingTotals } from './project-finance';
 
 export function projectForCommand(s:SuiteState,c:Command):string|undefined {
@@ -91,8 +92,9 @@ export function filterState(original:SuiteState,actor:Actor):SuiteState {
  };
  const unfiltered=normalizeState(original);
  s.projectFunding=Object.fromEntries(s.projects.filter(p=>canViewProjectFinance(roleFor(actor,p.id))).map(p=>[p.id,fundingTotals(unfiltered,p.id)]));
+ if(actor.role!=='admin')s.suite.pilot=emptyPilot();
  // Previous snapshots may contain confidential historical values; only administrators get the full audit trail.
- s.audit=actor.role==='admin'?s.audit:s.audit.filter(a=>a.projectId&&assigned.has(a.projectId)&&roleFor(actor,a.projectId)!=='client').map(a=>({...a,before:undefined,description:financial(a.projectId!)?a.description:a.action.replaceAll('.',' ')}));
+ s.audit=actor.role==='admin'?s.audit:s.audit.filter(a=>!a.action.startsWith('pilot.')&&a.projectId&&assigned.has(a.projectId)&&roleFor(actor,a.projectId)!=='client').map(a=>({...a,before:undefined,description:financial(a.projectId!)?a.description:a.action.replaceAll('.',' ')}));
  return s;
 }
 export function clientView(original:SuiteState,projectId:string){

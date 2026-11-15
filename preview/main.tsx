@@ -67,7 +67,8 @@ const root = createRoot(document.getElementById('root')!);
 root.render(<p className="preview-loading" role="status">Opening the CoreConstruct demo…</p>);
 createDemoRuntime().then((runtime) => {
   if (runtime.demo.onboarding) document.title = 'CoreConstruct · Ridgeway Works onboarding';
-  if (runtime.demo.portfolio) document.title = 'CoreConstruct · Five-year project portfolio';
+  if (runtime.demo.scorecard) document.title = 'CoreConstruct · Pilot scorecard';
+  else if (runtime.demo.portfolio) document.title = 'CoreConstruct · Five-year project portfolio';
   root.render(<WorkspaceRuntimeContext.Provider value={runtime}><Demo /></WorkspaceRuntimeContext.Provider>);
 }).catch(() => {
   root.render(<p className="preview-loading" role="alert">CoreConstruct could not open browser storage. Try refreshing the page.</p>);

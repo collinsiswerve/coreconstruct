@@ -30,7 +30,7 @@ export function monday(value = dateKey()): string { const d = new Date(value + '
 export function displayDate(value: string): string { return new Date(value.slice(0, 10) + 'T12:00:00Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); }
 const text = (v: unknown, label: string, max = 240) => { const s = String(v ?? '').trim(); if (!s || s.length > max) throw new DomainError(`${label} is required (maximum ${max} characters).`); return s; };
 const optional = (v: unknown, max = 500) => String(v ?? '').trim().slice(0, max);
-function validDate(v: unknown): string { const s = String(v ?? ''); if (!/^\d{4}-\d{2}-\d{2}$/.test(s) || !Number.isFinite(new Date(s + 'T12:00:00Z').getTime()) || new Date(s + 'T12:00:00Z').toISOString().slice(0, 10) !== s) throw new DomainError('Choose a valid date.'); return s; }
+export function validDate(v: unknown): string { const s = String(v ?? ''); if (!/^\d{4}-\d{2}-\d{2}$/.test(s) || !Number.isFinite(new Date(s + 'T12:00:00Z').getTime()) || new Date(s + 'T12:00:00Z').toISOString().slice(0, 10) !== s) throw new DomainError('Choose a valid date.'); return s; }
 function amount(v: unknown, allowZero = false) { const n = moneyToCents(v); if (!allowZero && n <= 0) throw new DomainError('The amount must be greater than zero.'); return n; }
 const find = <T extends { id: string }>(items: T[], id: unknown, name: string): T => { const x = items.find(v => v.id === id); if (!x) throw new DomainError(`${name} was not found.`, 404); return x; };
 export function paidFor(s: State, type: string, id: string): number { return s.payments.filter(p => p.targetType === type && p.targetId === id && !p.reversedAt).reduce((n, p) => n + p.amountCents, 0); }

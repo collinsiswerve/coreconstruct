@@ -3,6 +3,7 @@ import type { Actor, Brand, Delivery, Drawing, LocationEvidence, Module, Modules
 import { activeFunding, amountApplied, emptyFinance, linkFunding, openCommitments, receiptTotal, saveFinanceReview, saveReceiptPlan } from './project-finance';
 import { boqTotals, maxBoqRows, parseBoqLine } from './boq-import';
 import { openingBalanceFigures, parseOpeningBalances } from './opening-balances';
+import { emptyPilot, measurementWeek, savePilotBaseline, savePilotCycle, savePilotRenewal } from './pilot-scorecard';
 import { isSupplierInvoiceCost, supplierInvoiceMatch } from './procurement';
 import { addSampleClientUpdates, clientUpdatesSampleId } from './sample-client-updates';
 import { addSampleOperations, operationsSampleId } from './sample-operations';
@@ -10,8 +11,8 @@ import { addSampleFinance } from './sample-finance';
 import { addSampleComparisonProjects, isFinanceSample, sampleProjectCount } from './sample-projects';
 export const moduleDefaults: Modules = { design: true, boq: true, wages: true, materials: true, portal: true, variations: true };
 export const detailDefaults = (): ProjectDetails => ({ geofenceMeters: 150, lrNumber: '', county: '', clientEmail: '', clientPhone: '', clientTimezone: 'Africa/Nairobi', currency: 'KES', fxKesPerUnit: 1, fxAsOf: '', brief: '', startDate: '', estimatedCompletion: '', forecastRemainingCents: 0, managementFeeBps: 0, modules: {} });
-export const emptySuite = (): SuiteData => ({ version: 2, finance: emptyFinance(), brand: { primary: '#216447', accent: '#b58e42', theme: 'light', logoFileId: '', kraPin: '', ncaNumber: '', address: '', phone: '', email: '', preset: 'design-build', enforceGps: true, enforceWorkerIdentity: false }, modules: { ...moduleDefaults }, projectDetails: {}, boq: [], materials: [], orders: [], deliveries: [], stock: [], invoices: [], drawings: [], acknowledgements: [], designAcceptances: [], media: [], variations: [], receipts: [], actions: [], milestones: [], sequences: { orders: 0, variations: 0, receipts: 0 }, publishedWeeks: {}, identities: {}, piecework: [], appliedPiecework: {}, commandFingerprints: {} });
-export function normalizeState(value: State | SuiteState): SuiteState { return { ...emptyState(), ...value, suite: { ...emptySuite(), ...('suite' in value ? value.suite : {}), finance: { ...emptyFinance(), ...('suite' in value ? value.suite.finance : {}) } } }; }
+export const emptySuite = (): SuiteData => ({ version: 2, finance: emptyFinance(), pilot: emptyPilot(), brand: { primary: '#216447', accent: '#b58e42', theme: 'light', logoFileId: '', kraPin: '', ncaNumber: '', address: '', phone: '', email: '', preset: 'design-build', enforceGps: true, enforceWorkerIdentity: false }, modules: { ...moduleDefaults }, projectDetails: {}, boq: [], materials: [], orders: [], deliveries: [], stock: [], invoices: [], drawings: [], acknowledgements: [], designAcceptances: [], media: [], variations: [], receipts: [], actions: [], milestones: [], sequences: { orders: 0, variations: 0, receipts: 0 }, publishedWeeks: {}, identities: {}, piecework: [], appliedPiecework: {}, commandFingerprints: {} });
+export function normalizeState(value: State | SuiteState): SuiteState { return { ...emptyState(), ...value, suite: { ...emptySuite(), ...('suite' in value ? value.suite : {}), finance: { ...emptyFinance(), ...('suite' in value ? value.suite.finance : {}) }, pilot: { ...emptyPilot(), ...('suite' in value ? value.suite.pilot : {}) } } }; }
 export const fail = (message: string, status = 400): never => { throw new DomainError(message, status); };
 export const required = (v: unknown, name: string, max = 240): string => { const s = String(v ?? '').trim(); if (!s || s.length > max) fail(`${name} is required (maximum ${max} characters).`); return s; };
 export const optionalText = (v: unknown, max = 1000): string => String(v ?? '').trim().slice(0, max);
@@ -339,6 +340,30 @@ export function executeSuite(original: State | SuiteState, command: Command, act
       if (s.suite.finance.reviews[x.id] || s.suite.receipts.some(r => r.projectId === x.id) || s.suite.milestones.some(b => b.projectId === x.id)) fail('This sample project already has finance records.');
       addSampleFinance(s, x.id, actor.id, at);
       description = 'Loaded fictional sample finance records';
+      break;
+    }
+    case 'pilot.baseline.save': {
+      const { id } = project();
+      const measurements = s.suite.pilot.projects[id] ?? { cycles: {} };
+      before = measurements.baseline;
+      measurements.baseline = savePilotBaseline(p, measurements.baseline, at, actor.id);
+      s.suite.pilot.projects[id] = measurements;
+      description = 'Saved the existing-process pilot baseline';
+      break;
+    }
+    case 'pilot.week.save': {
+      const { id } = project(), week = measurementWeek(p.weekStart, at);
+      const measurements = s.suite.pilot.projects[id] ?? { cycles: {} };
+      before = measurements.cycles[week];
+      measurements.cycles[week] = savePilotCycle(p, measurements.cycles[week], at, actor.id);
+      s.suite.pilot.projects[id] = measurements;
+      description = 'Saved pilot measurements for ' + week;
+      break;
+    }
+    case 'pilot.renewal.save': {
+      before = s.suite.pilot.renewal;
+      s.suite.pilot.renewal = savePilotRenewal(p, s.suite.pilot.renewal, at, actor.id);
+      description = 'Recorded the firm’s pilot renewal response';
       break;
     }
     case 'finance.review.save': {
