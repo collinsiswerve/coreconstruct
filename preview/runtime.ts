@@ -1,13 +1,16 @@
 import { assertDrawingAccess } from '../lib/drawings';
 import { sampleEvidenceAsset } from '../lib/sample-client-updates';
-import { DomainError, type Command } from '../lib/domain';
+import { DomainError, emptyState, type Command } from '../lib/domain';
 import { authorize, clientView, filterState, roleFor } from '../lib/security';
 import { enabled, executeSuite, get, normalizeState } from '../lib/suite';
 import { addSampleComparisonProjects, isFinanceSample, sampleProjectCount } from '../lib/sample-projects';
-import type { Actor, SuiteState } from '../lib/suite-types';
+import type { Actor, Role, SuiteState } from '../lib/suite-types';
 import { openDemoFiles } from './files';
 import { addSampleFinance, principal, sampleWorkspace } from './sample';
 import { isPortfolioProject, portfolioActor, portfolioAsOf, portfolioFileAsset, portfolioWorkspace } from './portfolio-state';
+
+import { defaultFirmName } from '../lib/onboarding';
+import { onboardingTeam } from './onboarding-team';
 
 const storageKey = 'coreconstruct-pages-demo-v1';
 const allowedTypes = new Set(['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'video/mp4']);
@@ -17,13 +20,26 @@ export async function createDemoRuntime() {
   const params = new URLSearchParams(window.location.search);
   const receiptProject = (params.get('receipt') || params.get('receiptPdf') || '').split(':')[0];
   const drawingProject = (params.get('drawing') || '').split(':')[0];
-  const isPortfolio = root.pathname.endsWith('/portfolio/') || params.get('demo') === 'portfolio' || params.get('view') === 'portfolio' || [params.get('client'), params.get('project'), receiptProject, drawingProject]
-    .some(id => id && isPortfolioProject(id));
-  const storage = isPortfolio ? 'coreconstruct-m6-portfolio-v1' : storageKey;
-  const files = await openDemoFiles(isPortfolio ? '-m6' : '');
+  const isOnboarding = params.get('demo') === 'onboarding';
+  const isPortfolio = !isOnboarding && (root.pathname.endsWith('/portfolio/') || params.get('demo') === 'portfolio' || params.get('view') === 'portfolio' || [params.get('client'), params.get('project'), receiptProject, drawingProject]
+    .some(id => id && isPortfolioProject(id)));
+  const storage = isOnboarding ? 'coreconstruct-m7-onboarding-v1' : isPortfolio ? 'coreconstruct-m6-portfolio-v1' : storageKey;
+  const files = await openDemoFiles(isOnboarding ? '-m7-onboarding' : isPortfolio ? '-m6' : '');
+  const onboardingPrincipal: Actor = {
+    ...principal, id: 'rehearsal-principal', name: 'Rehearsal principal',
+    email: 'principal@example.invalid', organizationId: 'ridgeway-onboarding',
+  };
+  const team = isOnboarding ? onboardingTeam(storage + '-team', root, onboardingPrincipal) : undefined;
+  function withDemo(query: URLSearchParams) {
+    if (isOnboarding) query.set('demo', 'onboarding');
+    else if (isPortfolio) query.set('demo', 'portfolio');
+    return query;
+  }
+  const setupUrl = new URL('?demo=onboarding', root).href;
   const requestedRole = params.get('as');
-  const previewRole = requestedRole === 'pm' || requestedRole === 'accounts' || requestedRole === 'finance' || requestedRole === 'foreman' ? requestedRole : 'admin';
-  let current = isPortfolio ? portfolioWorkspace() : sampleWorkspace();
+  const previewRole = requestedRole === 'pm' || requestedRole === 'accounts' || requestedRole === 'finance' || requestedRole === 'foreman' || requestedRole === 'architect' ? requestedRole : 'admin';
+  let current = isOnboarding ? normalizeState({ ...emptyState(), firm: defaultFirmName })
+    : isPortfolio ? portfolioWorkspace() : sampleWorkspace();
 
   function save(state: SuiteState) {
     current = state;
@@ -37,7 +53,7 @@ export async function createDemoRuntime() {
       if (state.schemaVersion === 1 && state.suite?.version === 2) {
         const previousCount = state.projects.length;
         current = normalizeState(state);
-        if (isPortfolio) return current;
+        if (isPortfolio || isOnboarding) return current;
         if (!state.suite.finance) addSampleFinance(current);
         const sampleProjects = current.projects.filter(isFinanceSample);
         const residence = sampleProjects[0];
@@ -66,8 +82,7 @@ export async function createDemoRuntime() {
           query.set('as', params.get('as')!);
           query.set('project', params.get('project') || '');
         }
-        if (isPortfolio) query.set('demo', 'portfolio');
-        return new URL('?' + query, root).href;
+        return new URL('?' + withDemo(query), root).href;
       }
       const portfolio = isPortfolio && portfolioFileAsset(fileId);
       if (portfolio) {
@@ -91,8 +106,7 @@ export async function createDemoRuntime() {
     }
     if (kind === 'client' && type) {
       const query = new URLSearchParams({ client: decodeURIComponent(type) });
-      if (isPortfolio) query.set('demo', 'portfolio');
-      return new URL('?' + query, root).href;
+      return new URL('?' + withDemo(query), root).href;
     }
     return new URL(path.replace(/^\//, ''), root).href;
   }
@@ -100,11 +114,18 @@ export async function createDemoRuntime() {
   function actorFor(state: SuiteState): Actor {
     const client = params.get('client') || params.get('forClient');
     const role = client ? 'client' : previewRole;
-    if (role === 'admin') return isPortfolio ? portfolioActor('admin') : principal;
+    if (role === 'admin') return isOnboarding ? onboardingPrincipal : isPortfolio ? portfolioActor('admin') : principal;
+    if (team) {
+      const projectId = client || params.get('project') || state.projects[0]?.id || '';
+      return team.actorFor(role, projectId) ?? {
+        ...onboardingPrincipal, id: 'rehearsal-unassigned', name: 'Unassigned rehearsal user',
+        email: 'unassigned@example.invalid', role: 'client', projectRoles: {},
+      };
+    }
     if (isPortfolio) return portfolioActor(role, client || params.get('project') || state.projects[0]?.id);
     const project = client ? state.projects.find(item => item.id === client)
       : state.projects.find(item => item.id === params.get('project')) || state.projects.find(isFinanceSample);
-    const names = { client: 'Sample client', pm: 'Demo PM / QS', accounts: 'Demo Accounts', finance: 'Demo Finance', foreman: 'Demo foreman' };
+    const names = { client: 'Sample client', pm: 'Demo PM / QS', accounts: 'Demo Accounts', finance: 'Demo Finance', architect: 'Demo Architect', foreman: 'Demo foreman' };
     return {
       id: 'demo-' + role,
       name: names[role],
@@ -129,12 +150,20 @@ export async function createDemoRuntime() {
         operationApplied: state.commandIds.includes(url.searchParams.get('operationId') || ''),
       });
 
+      if (team && url.pathname === '/api/team') {
+        if (actor.role !== 'admin') throw new DomainError('Only the principal can manage team access.', 403);
+        return Response.json(method === 'POST' ? team.update(JSON.parse(String(init?.body)), state) : team.list());
+      }
+      if (team && url.pathname === '/api/invitations' && method === 'POST') {
+        return Response.json(team.claim(String(JSON.parse(String(init?.body)).token || '')));
+      }
       if (url.pathname === '/api/workspace' && method === 'GET') return response();
 
       if (url.pathname === '/api/workspace' && method === 'POST') {
         const command = JSON.parse(String(init?.body)) as Command;
-        if (isPortfolio && command.type.startsWith('demo.') && command.type.endsWith('.load')) {
-          throw new DomainError('The portfolio already has fictional project records.');
+        if ((isPortfolio || isOnboarding) && command.type.startsWith('demo.') && command.type.endsWith('.load')) {
+          throw new DomainError(isOnboarding ? 'Use the workspace setup steps to add your fictional records.'
+            : 'The portfolio already has fictional project records.');
         }
         delete command.payload.nationalId;
         delete command.payload.mpesaPhone;
@@ -219,22 +248,28 @@ export async function createDemoRuntime() {
     href,
     demo: {
       role: previewRole,
+      onboarding: isOnboarding,
+      onboardingHref: setupUrl,
+      ...(team && { canPreviewRole: (role: Role, projectId: string) => role === 'admin' || !!team.actorFor(role, projectId) }),
       ...(isPortfolio && { portfolio: { href: new URL('?demo=portfolio&view=portfolio', root).href, asOf: portfolioAsOf } }),
       switchRole(role: string, projectId: string, currentView?: string) {
         if (role === 'client' && projectId) {
           location.assign(href('/client/' + projectId));
           return;
         }
-        const view = ['admin','pm'].includes(role) && currentView === 'portfolio' ? 'portfolio'
+        const view = isOnboarding && ['admin', 'pm', 'foreman', 'architect'].includes(role)
+          ? ({ admin: 'onboarding', pm: 'wagebills', foreman: 'attendance', architect: 'design' } as Record<string, string>)[role]
+          : ['admin','pm'].includes(role) && currentView === 'portfolio' ? 'portfolio'
           : role === 'foreman' || (role === 'admin' || role === 'pm') && currentView === 'design' ? 'design' : 'finance';
         const query = new URLSearchParams({ view, as: role, project: projectId });
-        if (isPortfolio) query.set('demo', 'portfolio');
-        location.assign(new URL('?' + query, root));
+        location.assign(new URL('?' + withDemo(query), root));
       },
       async reset() {
         await files.clear();
         localStorage.removeItem(storage);
-        location.replace(isPortfolio ? new URL('?demo=portfolio&view=portfolio', root).href : root.href);
+        team?.reset();
+        if (isOnboarding) localStorage.removeItem('cc-m7-setup-project');
+        location.replace(isOnboarding ? setupUrl : isPortfolio ? new URL('?demo=portfolio&view=portfolio', root).href : root.href);
       },
     },
   };

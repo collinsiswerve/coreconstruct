@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import Workspace from '../app/workspace';
 import { PortalClient } from '../app/portal-client';
 import ReceiptStatus from '../app/receipt-status';
+import JoinClient from '../app/join-client';
 import { WorkspaceRuntimeContext, useWorkspaceRuntime } from '../app/workspace-runtime';
 import { clientUpdatesSampleId } from '../lib/sample-client-updates';
 import { createDemoRuntime } from './runtime';
@@ -42,19 +43,20 @@ function Demo() {
   const params = new URLSearchParams(window.location.search);
   const { demo } = useWorkspaceRuntime();
   const client = params.get('client');
+  const invite = demo?.onboarding ? params.get('invite') : null;
   const receipt = params.get('receipt');
   const receiptPdf = params.get('receiptPdf');
   const drawing = params.get('drawing');
   const activeDocument = drawing?.split(':') ?? [];
   const sample = client ? portfolioProject(client) : undefined;
-  if (!client && !receipt && !receiptPdf && !drawing) return <Workspace />;
-  const returnTo = demo?.portfolio?.href ?? (drawing || client === clientUpdatesSampleId ? "./?view=design" : "./?view=finance");
+  if (!client && !invite && !receipt && !receiptPdf && !drawing) return <Workspace />;
+  const returnTo = (demo?.onboarding ? demo.onboardingHref : demo?.portfolio?.href) ?? (drawing || client === clientUpdatesSampleId ? "./?view=design" : "./?view=finance");
   const documentName = activeDocument.length === 2 && isPortfolioProject(activeDocument[0])
     ? portfolioProject(activeDocument[0])!.code + '-' + activeDocument[1] + '.pdf'
     : 'coreconstruct-drawing.pdf';
   return <>
-    <div className="demo-return"><a href={returnTo}>← {demo?.portfolio ? 'Back to project portfolio' : 'Back to workspace'}</a><span>Fictional sample records</span></div>
-    {drawing ? <PdfDownload path={'/api/files/' + encodeURIComponent(drawing)} title="Project document" filename={documentName} />
+    <div className="demo-return"><a href={returnTo}>← {demo?.onboarding ? 'Back to workspace setup' : demo?.portfolio ? 'Back to project portfolio' : 'Back to workspace'}</a><span>Fictional sample records</span></div>
+    {invite ? <JoinClient token={invite} /> : drawing ? <PdfDownload path={'/api/files/' + encodeURIComponent(drawing)} title="Project document" filename={documentName} />
       : receipt ? <ReceiptStatus id={receipt} org="" />
         : receiptPdf ? <PdfDownload path={'/api/receipts/' + encodeURIComponent(receiptPdf)} title="Sample receipt" filename="coreconstruct-sample-receipt.pdf" />
           : <PortalClient projectId={client!} sampleSummary={sample && { code: sample.code, client: sample.client, start: sample.start, type: sample.type }} />}
@@ -64,6 +66,7 @@ function Demo() {
 const root = createRoot(document.getElementById('root')!);
 root.render(<p className="preview-loading" role="status">Opening the CoreConstruct demo…</p>);
 createDemoRuntime().then((runtime) => {
+  if (runtime.demo.onboarding) document.title = 'CoreConstruct · Ridgeway Works onboarding';
   if (runtime.demo.portfolio) document.title = 'CoreConstruct · Five-year project portfolio';
   root.render(<WorkspaceRuntimeContext.Provider value={runtime}><Demo /></WorkspaceRuntimeContext.Provider>);
 }).catch(() => {

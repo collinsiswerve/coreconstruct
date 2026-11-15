@@ -1,3 +1,4 @@
+import type { Role } from '../lib/suite-types';
 import { createContext, useContext } from 'react';
 
 type WorkspaceRuntime = {
@@ -7,6 +8,9 @@ type WorkspaceRuntime = {
     reset: () => Promise<void>;
     role: string;
     switchRole: (role: string, projectId: string, view?: string) => void;
+    onboarding?: boolean;
+    onboardingHref?: string;
+    canPreviewRole?: (role: Role, projectId: string) => boolean;
     portfolio?: { href: string; asOf: string };
   };
 };

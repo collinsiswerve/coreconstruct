@@ -254,3 +254,25 @@
   .close-checks li > .text-button { grid-column: 1 / -1; justify-self: start; }
   .close-balances .pilot-score-grid strong { font-size: 17px; }
 }
+
+.onboarding { display: grid; gap: 14px; margin-bottom: 28px; }
+.onboarding-demo { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin: 0; }
+.onboarding-demo .text-button { white-space: nowrap; }
+.onboarding-progress { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 20px 22px; }
+.onboarding-progress h2 { margin: 0 0 4px; font-size: 18px; }
+.onboarding-progress p, .onboarding-step-copy p { color: var(--muted); margin: 0; }
+.onboarding-progress progress { width: min(240px, 36%); height: 9px; accent-color: var(--brand-primary, #216447); }
+.onboarding-steps { display: grid; gap: 10px; padding: 0; margin: 0; list-style: none; }
+.onboarding-step { align-items: center; display: grid; gap: 16px; grid-template-columns: auto minmax(0, 1fr) auto; padding: 17px 20px; }
+.onboarding-step[aria-current="step"] { border-color: var(--brand-primary, #216447); }
+.onboarding-step-copy h3 { margin: 0 0 5px; font-size: 14px; }
+.onboarding-step-copy p { font-size: 12px; line-height: 1.5; }
+.onboarding-step-actions { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 10px; }
+.onboarding-step .onboarding-attach { margin-top: 7px; }
+.onboarding > .btn { justify-self: start; }
+@media (max-width: 620px) {
+  .onboarding-step { grid-template-columns: auto minmax(0, 1fr); padding: 14px; gap: 10px; }
+  .onboarding-step-actions { grid-column: 2; justify-content: flex-start; }
+  .onboarding-step-actions .btn { white-space: normal; text-align: left; }
+  .onboarding-progress { padding: 14px; }
+}
