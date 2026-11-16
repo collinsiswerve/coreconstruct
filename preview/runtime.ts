@@ -23,26 +23,30 @@ export async function createDemoRuntime() {
   const drawingProject = (params.get('drawing') || '').split(':')[0];
   const isOnboarding = params.get('demo') === 'onboarding';
   const isScorecard = params.get('demo') === 'scorecard';
-  const isPortfolio = !isOnboarding && (isScorecard || root.pathname.endsWith('/portfolio/') || params.get('demo') === 'portfolio' || params.get('view') === 'portfolio' || [params.get('client'), params.get('project'), receiptProject, drawingProject]
+  const isBilling = params.get('demo') === 'billing';
+  const isPortfolio = !isOnboarding && !isBilling && (isScorecard || root.pathname.endsWith('/portfolio/') || params.get('demo') === 'portfolio' || params.get('view') === 'portfolio' || [params.get('client'), params.get('project'), receiptProject, drawingProject]
     .some(id => id && isPortfolioProject(id)));
-  const storage = isOnboarding ? 'coreconstruct-m7-onboarding-v1' : isScorecard ? 'coreconstruct-m7-scorecard-v1' : isPortfolio ? 'coreconstruct-m6-portfolio-v1' : storageKey;
-  const files = await openDemoFiles(isOnboarding ? '-m7-onboarding' : isScorecard ? '-m7-scorecard' : isPortfolio ? '-m6' : '');
+  const storage = isBilling ? 'coreconstruct-m8-billing-v1' : isOnboarding ? 'coreconstruct-m7-onboarding-v1' : isScorecard ? 'coreconstruct-m7-scorecard-v1' : isPortfolio ? 'coreconstruct-m6-portfolio-v1' : storageKey;
+  const files = await openDemoFiles(isBilling ? '-m8-billing' : isOnboarding ? '-m7-onboarding' : isScorecard ? '-m7-scorecard' : isPortfolio ? '-m6' : '');
   const onboardingPrincipal: Actor = {
     ...principal, id: 'rehearsal-principal', name: 'Rehearsal principal',
     email: 'principal@example.invalid', organizationId: 'ridgeway-onboarding',
   };
+  const billingPrincipal: Actor = { ...onboardingPrincipal, organizationId: 'ridgeway-billing' };
   const team = isOnboarding ? onboardingTeam(storage + '-team', root, onboardingPrincipal) : undefined;
   function withDemo(query: URLSearchParams) {
     if (isOnboarding) query.set('demo', 'onboarding');
+    else if (isBilling) query.set('demo', 'billing');
     else if (isScorecard) query.set('demo', 'scorecard');
     else if (isPortfolio) query.set('demo', 'portfolio');
     return query;
   }
   const setupUrl = new URL('?demo=onboarding', root).href;
   const scorecardUrl = new URL('?' + new URLSearchParams({ demo: 'scorecard', view: 'pilot', project: scorecardSampleProject }), root).href;
+  const billingUrl = new URL('?demo=billing&view=billing', root).href;
   const requestedRole = params.get('as');
   const previewRole = requestedRole === 'pm' || requestedRole === 'accounts' || requestedRole === 'finance' || requestedRole === 'foreman' || requestedRole === 'architect' ? requestedRole : 'admin';
-  let current = isOnboarding ? normalizeState({ ...emptyState(), firm: defaultFirmName })
+  let current = isOnboarding || isBilling ? normalizeState({ ...emptyState(), firm: isBilling ? 'Ridgeway Works' : defaultFirmName })
     : isPortfolio ? portfolioWorkspace() : sampleWorkspace();
   if (isScorecard) addScorecardSample(current);
 
@@ -58,7 +62,7 @@ export async function createDemoRuntime() {
       if (state.schemaVersion === 1 && state.suite?.version === 2) {
         const previousCount = state.projects.length;
         current = normalizeState(state);
-        if (isPortfolio || isOnboarding) return current;
+        if (isPortfolio || isOnboarding || isBilling) return current;
         if (!state.suite.finance) addSampleFinance(current);
         const sampleProjects = current.projects.filter(isFinanceSample);
         const residence = sampleProjects[0];
@@ -119,7 +123,7 @@ export async function createDemoRuntime() {
   function actorFor(state: SuiteState): Actor {
     const client = params.get('client') || params.get('forClient');
     const role = client ? 'client' : previewRole;
-    if (role === 'admin') return isOnboarding ? onboardingPrincipal : isPortfolio ? portfolioActor('admin') : principal;
+    if (role === 'admin') return isBilling ? billingPrincipal : isOnboarding ? onboardingPrincipal : isPortfolio ? portfolioActor('admin') : principal;
     if (team) {
       const projectId = client || params.get('project') || state.projects[0]?.id || '';
       return team.actorFor(role, projectId) ?? {
@@ -136,7 +140,7 @@ export async function createDemoRuntime() {
       name: names[role],
       email: role + '@example.invalid',
       role,
-      organizationId: principal.organizationId,
+      organizationId: isBilling ? billingPrincipal.organizationId : principal.organizationId,
       projectRoles: project ? { [project.id]: role } : {},
     };
   }
@@ -166,6 +170,8 @@ export async function createDemoRuntime() {
 
       if (url.pathname === '/api/workspace' && method === 'POST') {
         const command = JSON.parse(String(init?.body)) as Command;
+        if (command.type.startsWith('subscription.') && !isBilling) throw new DomainError('Open the billing demo to test a subscription.', 404);
+        if (isBilling && !command.type.startsWith('subscription.')) throw new DomainError('Use the project demo to record project activity.', 404);
         if ((isPortfolio || isOnboarding) && command.type.startsWith('demo.') && command.type.endsWith('.load')) {
           throw new DomainError(isOnboarding ? 'Use the workspace setup steps to add your fictional records.'
             : 'The portfolio already has fictional project records.');
@@ -256,6 +262,8 @@ export async function createDemoRuntime() {
       onboarding: isOnboarding,
       onboardingHref: setupUrl,
       scorecardHref: scorecardUrl,
+      billing: isBilling,
+      billingHref: billingUrl,
       ...(isScorecard && { scorecard: { projectId: scorecardSampleProject } }),
       ...(team && { canPreviewRole: (role: Role, projectId: string) => role === 'admin' || !!team.actorFor(role, projectId) }),
       ...(isPortfolio && { portfolio: { href: new URL('?view=portfolio&demo=' + (isScorecard ? 'scorecard' : 'portfolio'), root).href, asOf: portfolioAsOf } }),
@@ -264,7 +272,7 @@ export async function createDemoRuntime() {
           location.assign(href('/client/' + projectId));
           return;
         }
-        const view = isOnboarding && ['admin', 'pm', 'foreman', 'architect'].includes(role)
+        const view = isBilling ? 'billing' : isOnboarding && ['admin', 'pm', 'foreman', 'architect'].includes(role)
           ? ({ admin: 'onboarding', pm: 'wagebills', foreman: 'attendance', architect: 'design' } as Record<string, string>)[role]
           : isScorecard && (role === 'admin' || role === 'pm') && currentView === 'pilot' ? 'pilot'
           : ['admin','pm'].includes(role) && currentView === 'portfolio' ? 'portfolio'
@@ -278,7 +286,7 @@ export async function createDemoRuntime() {
         team?.reset();
         if (isOnboarding) localStorage.removeItem('cc-m7-setup-project');
         if (isScorecard) localStorage.removeItem('cc-m7-scorecard-project');
-        location.replace(isOnboarding ? setupUrl : isScorecard ? scorecardUrl : isPortfolio ? new URL('?demo=portfolio&view=portfolio', root).href : root.href);
+        location.replace(isBilling ? billingUrl : isOnboarding ? setupUrl : isScorecard ? scorecardUrl : isPortfolio ? new URL('?demo=portfolio&view=portfolio', root).href : root.href);
       },
     },
   };

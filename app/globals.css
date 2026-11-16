@@ -308,3 +308,13 @@
   .pilot-scorecard-body { padding: 0 12px 12px; }
   .pilot-scorecard-context article { align-items: flex-start; flex-wrap: wrap; }
 }
+
+.subscription-banner { margin: 0; }
+.subscription-body { display: grid; gap: 12px; padding: 18px 22px; font-size: 12px; line-height: 1.6; }
+.subscription-body p, .subscription-rate span { color: var(--muted); }
+.subscription-rate strong { font-size: 30px; letter-spacing: -.7px; }
+.subscription-billing .row-actions { gap: 8px; }
+.subscription-billing td { white-space: nowrap; }
+.subscription-billing summary { cursor: pointer; color: var(--ink); }
+.subscription-billing details ul { margin: 8px 0 0 14px; padding: 0; color: var(--muted); }
+.subscription-billing details li + li { margin-top: 6px; }

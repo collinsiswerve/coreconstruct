@@ -3,9 +3,11 @@ import { DomainError, paidFor, type Command } from './domain';
 import { detailDefaults, enabled, get, normalizeState, projectFinancials } from './suite';
 import type { Actor, Module, Role, SuiteState } from './suite-types';
 import { emptyPilot } from './pilot-scorecard';
+import { emptySubscriptionBilling } from './subscription-billing';
 import { amountApplied, canViewProfit, canViewProjectFinance, canViewReceiptLedger, fundingTotals } from './project-finance';
 
 export function projectForCommand(s:SuiteState,c:Command):string|undefined {
+ if(c.type.startsWith('subscription.'))return undefined;
  const p=c.payload;
  if(c.type==='finance.receipt.plan'||c.type==='finance.funding.link')return get(s.suite.receipts,p.receiptId,'Receipt').projectId;
  if(c.type==='finance.funding.reverse'){
@@ -41,6 +43,10 @@ const grants:Record<Role,Set<string>>={
  client:new Set(['variation.decide','design.accept']),
 };
 export function authorize(s:SuiteState,c:Command,actor:Actor):void {
+ if(c.type.startsWith('subscription.')){
+   if(actor.role!=='admin')throw new DomainError('Only the firm principal can manage subscription billing.',403);
+   return;
+ }
  const pid=projectForCommand(s,c),role=roleFor(actor,pid);
  if(role!=='admin'&&!grants[role]?.has(c.type))throw new DomainError('Your role does not permit this action.',403);
  if(pid&&['design.accept','variation.decide'].includes(c.type)&&!enabled(s,pid,'portal'))throw new DomainError('Client access is disabled for this project.',403);
@@ -92,9 +98,12 @@ export function filterState(original:SuiteState,actor:Actor):SuiteState {
  };
  const unfiltered=normalizeState(original);
  s.projectFunding=Object.fromEntries(s.projects.filter(p=>canViewProjectFinance(roleFor(actor,p.id))).map(p=>[p.id,fundingTotals(unfiltered,p.id)]));
- if(actor.role!=='admin')s.suite.pilot=emptyPilot();
+ if(actor.role!=='admin'){
+   s.suite.pilot=emptyPilot();
+   s.suite.subscriptionBilling=emptySubscriptionBilling();
+ }
  // Previous snapshots may contain confidential historical values; only administrators get the full audit trail.
- s.audit=actor.role==='admin'?s.audit:s.audit.filter(a=>!a.action.startsWith('pilot.')&&a.projectId&&assigned.has(a.projectId)&&roleFor(actor,a.projectId)!=='client').map(a=>({...a,before:undefined,description:financial(a.projectId!)?a.description:a.action.replaceAll('.',' ')}));
+ s.audit=actor.role==='admin'?s.audit:s.audit.filter(a=>!a.action.startsWith('pilot.')&&!a.action.startsWith('subscription.')&&a.projectId&&assigned.has(a.projectId)&&roleFor(actor,a.projectId)!=='client').map(a=>({...a,before:undefined,description:financial(a.projectId!)?a.description:a.action.replaceAll('.',' ')}));
  return s;
 }
 export function clientView(original:SuiteState,projectId:string){

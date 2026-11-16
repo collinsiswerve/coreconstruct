@@ -12,6 +12,8 @@ type WorkspaceRuntime = {
     onboardingHref?: string;
     scorecard?: { projectId: string };
     scorecardHref?: string;
+    billing?: boolean;
+    billingHref?: string;
     canPreviewRole?: (role: Role, projectId: string) => boolean;
     portfolio?: { href: string; asOf: string };
   };

@@ -8,6 +8,8 @@ Use [Project portfolio](https://collinsiswerve.github.io/coreconstruct/?demo=por
 
 The portfolio stores demo changes separately in the browser, including changes made from a sample client page. Reset the portfolio from an open project to restore the fictional records. The production build also packages the same browser demo at `/portfolio/` in the private app.
 
+Open the [M8 subscription billing rehearsal](https://collinsiswerve.github.io/coreconstruct/?demo=billing&view=billing) as the principal of fictional Ridgeway Works. Start a KSh 10,000 monthly subscription, record a failed test payment and then a successful one, simulate the next month, and test cancellation at the end of a paid period. This price follows the blueprint’s break-even example. The demo stores its invoices and payment attempts in this browser. The signed-in pilot exposes the same rehearsal under **Manage → Subscription billing** with firm-scoped records.
+
 ## Build
 
 Requires the Node and pnpm versions in the parent repository. From the repository root:

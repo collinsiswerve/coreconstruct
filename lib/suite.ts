@@ -4,6 +4,7 @@ import { activeFunding, amountApplied, emptyFinance, linkFunding, openCommitment
 import { boqTotals, maxBoqRows, parseBoqLine } from './boq-import';
 import { openingBalanceFigures, parseOpeningBalances } from './opening-balances';
 import { emptyPilot, measurementWeek, savePilotBaseline, savePilotCycle, savePilotRenewal } from './pilot-scorecard';
+import { advanceTestCycle, emptySubscriptionBilling, recordTestPayment, setTestCancellation, startTestSubscription, subscriptionStatus } from './subscription-billing';
 import { isSupplierInvoiceCost, supplierInvoiceMatch } from './procurement';
 import { addSampleClientUpdates, clientUpdatesSampleId } from './sample-client-updates';
 import { addSampleOperations, operationsSampleId } from './sample-operations';
@@ -11,8 +12,8 @@ import { addSampleFinance } from './sample-finance';
 import { addSampleComparisonProjects, isFinanceSample, sampleProjectCount } from './sample-projects';
 export const moduleDefaults: Modules = { design: true, boq: true, wages: true, materials: true, portal: true, variations: true };
 export const detailDefaults = (): ProjectDetails => ({ geofenceMeters: 150, lrNumber: '', county: '', clientEmail: '', clientPhone: '', clientTimezone: 'Africa/Nairobi', currency: 'KES', fxKesPerUnit: 1, fxAsOf: '', brief: '', startDate: '', estimatedCompletion: '', forecastRemainingCents: 0, managementFeeBps: 0, modules: {} });
-export const emptySuite = (): SuiteData => ({ version: 2, finance: emptyFinance(), pilot: emptyPilot(), brand: { primary: '#216447', accent: '#b58e42', theme: 'light', logoFileId: '', kraPin: '', ncaNumber: '', address: '', phone: '', email: '', preset: 'design-build', enforceGps: true, enforceWorkerIdentity: false }, modules: { ...moduleDefaults }, projectDetails: {}, boq: [], materials: [], orders: [], deliveries: [], stock: [], invoices: [], drawings: [], acknowledgements: [], designAcceptances: [], media: [], variations: [], receipts: [], actions: [], milestones: [], sequences: { orders: 0, variations: 0, receipts: 0 }, publishedWeeks: {}, identities: {}, piecework: [], appliedPiecework: {}, commandFingerprints: {} });
-export function normalizeState(value: State | SuiteState): SuiteState { return { ...emptyState(), ...value, suite: { ...emptySuite(), ...('suite' in value ? value.suite : {}), finance: { ...emptyFinance(), ...('suite' in value ? value.suite.finance : {}) }, pilot: { ...emptyPilot(), ...('suite' in value ? value.suite.pilot : {}) } } }; }
+export const emptySuite = (): SuiteData => ({ version: 2, finance: emptyFinance(), pilot: emptyPilot(), subscriptionBilling: emptySubscriptionBilling(), brand: { primary: '#216447', accent: '#b58e42', theme: 'light', logoFileId: '', kraPin: '', ncaNumber: '', address: '', phone: '', email: '', preset: 'design-build', enforceGps: true, enforceWorkerIdentity: false }, modules: { ...moduleDefaults }, projectDetails: {}, boq: [], materials: [], orders: [], deliveries: [], stock: [], invoices: [], drawings: [], acknowledgements: [], designAcceptances: [], media: [], variations: [], receipts: [], actions: [], milestones: [], sequences: { orders: 0, variations: 0, receipts: 0 }, publishedWeeks: {}, identities: {}, piecework: [], appliedPiecework: {}, commandFingerprints: {} });
+export function normalizeState(value: State | SuiteState): SuiteState { return { ...emptyState(), ...value, suite: { ...emptySuite(), ...('suite' in value ? value.suite : {}), finance: { ...emptyFinance(), ...('suite' in value ? value.suite.finance : {}) }, pilot: { ...emptyPilot(), ...('suite' in value ? value.suite.pilot : {}) }, subscriptionBilling: ('suite' in value && value.suite.subscriptionBilling) || emptySubscriptionBilling() } }; }
 export const fail = (message: string, status = 400): never => { throw new DomainError(message, status); };
 export const required = (v: unknown, name: string, max = 240): string => { const s = String(v ?? '').trim(); if (!s || s.length > max) fail(`${name} is required (maximum ${max} characters).`); return s; };
 export const optionalText = (v: unknown, max = 1000): string => String(v ?? '').trim().slice(0, max);
@@ -364,6 +365,27 @@ export function executeSuite(original: State | SuiteState, command: Command, act
       before = s.suite.pilot.renewal;
       s.suite.pilot.renewal = savePilotRenewal(p, s.suite.pilot.renewal, at, actor.id);
       description = 'Recorded the firm’s pilot renewal response';
+      break;
+    }
+    case 'subscription.start': {
+      startTestSubscription(s.suite.subscriptionBilling, at);
+      description = 'Started the test workspace subscription';
+      break;
+    }
+    case 'subscription.payment': {
+      const payment = recordTestPayment(s.suite.subscriptionBilling, p);
+      description = 'Recorded a ' + (payment.outcome === 'paid' ? 'successful' : 'failed') + ' test payment ' + payment.reference;
+      break;
+    }
+    case 'subscription.advance': {
+      advanceTestCycle(s.suite.subscriptionBilling, p.invoice);
+      description = subscriptionStatus(s.suite.subscriptionBilling) === 'Ended'
+        ? 'Ended the test subscription at the close of the billing period' : 'Issued the next test subscription invoice';
+      break;
+    }
+    case 'subscription.cancel': {
+      setTestCancellation(s.suite.subscriptionBilling, p);
+      description = p.cancel ? 'Scheduled the test subscription to end at the close of the billing period' : 'Resumed test subscription renewal';
       break;
     }
     case 'finance.review.save': {
