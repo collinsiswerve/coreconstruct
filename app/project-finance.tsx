@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from 'react';
 import { ArrowDownLeft, ArrowUpRight, BarChart3, ChevronDown, Download, FileText, Link2, Plus, Wallet } from 'lucide-react';
 import { dateKey, kes, totals, type Project } from '../lib/domain';
+import { fullDate } from '../lib/display';
 import {
   activeFunding, amountApplied, canManageReceipts, canViewProfit, canViewReceiptLedger,
   confirmedOutflows, forecastNeedsReview, fundingCategories, fundingTotals, openCommitments,
@@ -23,15 +24,15 @@ const choice = (name: string, label: string, options: FormField['options']): For
 
 function Card({ title, amount, detail, icon, signed = false }: { title: string; amount: number | null; detail: string; icon: ReactNode; signed?: boolean }) {
   const tone = signed && amount !== null ? amount < 0 ? 'negative' : amount > 0 ? 'positive' : '' : '';
-  return <article className="finance-card">
+  return <article className="finance-card" data-tone={tone}>
     <div><span>{title}</span><span className="metric-icon teal">{icon}</span></div>
     <strong className={tone}>{amount === null ? '—' : kes(amount)}</strong>
     <p>{detail}</p>
   </article>;
 }
 
-function Panel({ title, description, action, children }: { title: string; description?: string; action?: ReactNode; children: ReactNode }) {
-  return <section className="panel finance-panel">
+function Panel({ id, title, description, action, children }: { id?: string; title: string; description?: string; action?: ReactNode; children: ReactNode }) {
+  return <section id={id} className="panel finance-panel">
     <div className="panel-heading"><div><h2>{title}</h2>{description && <p>{description}</p>}</div>{action}</div>
     {children}
   </section>;
@@ -258,7 +259,7 @@ export function ProjectFinance({ state, project, role, organizationId, saving, e
   const forecastDetail = forecastProfit === null
     ? review ? 'Enter the agreed contract value.' : 'Record the remaining cost to complete.'
     : forecastProfit < 0 ? 'Forecast loss' : forecastProfit > 0 ? 'Forecast profit' : 'Break-even forecast';
-  const profitDetail = figures ? (figures.profitToDate < 0 ? 'Loss' : figures.profitToDate > 0 ? 'Profit' : 'Break-even') + ' through ' + review!.asOf : 'Awaiting finance review';
+  const profitDetail = figures ? (figures.profitToDate < 0 ? 'Loss' : figures.profitToDate > 0 ? 'Profit' : 'Break-even') + ' through ' + fullDate(review!.asOf) : 'Awaiting finance review';
 
   return <div className="finance-page">
     {canLoadSample && <div className="notice subtle">
@@ -279,20 +280,109 @@ export function ProjectFinance({ state, project, role, organizationId, saving, e
         <Card title="Client cash received" amount={totalReceived} detail={openingReceived ? 'Confirmed receipts and opening payments' : 'Active confirmed receipts'} icon={<ArrowDownLeft size={16} />} />
         <Card title="Cash paid out" amount={paid} detail={openingCash?.costsPaidCents ? 'Includes opening paid costs' : 'Confirmed payments and advances'} icon={<ArrowUpRight size={16} />} />
       </>}
-      {allowLedger && <Card title="Tracked cash position" amount={totalReceived - paid} detail={kes(totalReceived) + ' received · ' + kes(paid) + ' paid out'} signed icon={<Wallet size={16} />} />}
+      {allowLedger && <Card title="Tracked cash position" amount={totalReceived - paid} detail={(totalReceived < paid ? 'Cash shortfall' : totalReceived > paid ? 'Cash surplus' : 'Cash balanced') + ' · ' + kes(totalReceived) + ' received · ' + kes(paid) + ' paid out'} signed icon={<Wallet size={16} />} />}
     </section>
 
+    {(allowProfit || allowLedger) && <nav className="finance-jump-links" aria-label="Finance sections">
+      {allowLedger && <>
+        <a className="btn" href="#finance-receipts">Client receipts <ChevronDown size={14} aria-hidden="true" /></a>
+        <a className="btn" href="#finance-billing">Billing register <ChevronDown size={14} aria-hidden="true" /></a>
+      </>}
+      {allowProfit && <a className="btn" href="#finance-review">Profit and forecast <ChevronDown size={14} aria-hidden="true" /></a>}
+    </nav>}
     {allowLedger && <Panel title="Client funds" description={openingReceived ? 'Allocations for individual receipts recorded in CoreConstruct' : 'How recorded client receipts are used'}>
       <ClientFundsChart received={received} funding={funding} />
     </Panel>}
 
-    {allowProfit && <Panel title="Profit and forecast review"
-      description={review ? 'Profit cutoff ' + review.asOf + ' · forecast saved ' + dateKey(new Date(review.recordedAt)) : 'Record earned revenue, project costs and the remaining estimate.'}
+    {allowLedger && <>
+      <Panel id="finance-receipts" title="Client receipts"
+        action={manageReceipts && <button className="btn primary" onClick={issueReceipt}><Plus size={15} />Record client receipt</button>}>
+        {unlinkedSpending > 0 && <div className="finance-notice" data-attention="true"><strong>Unlinked payments</strong> · {kes(unlinkedSpending)} in confirmed spending lacks a receipt funding link.</div>}
+        {receipts.map(receipt => {
+          const plan = state.suite.finance.plans[receipt.id];
+          const links = active.filter(link => link.receiptId === receipt.id);
+          const allocated = plan?.allocations.reduce((sum, row) => sum + row.amountCents, 0) || 0;
+          const applied = plan?.applications.reduce((sum, row) => sum + row.amountCents, 0) || 0;
+          const spent = links.reduce((sum, link) => sum + link.amountCents, 0);
+          const expanded = !!expandedReceipts[receipt.id];
+          const breakdownId = 'receipt-breakdown-' + receipt.id;
+          return <article className="finance-receipt" key={receipt.id}>
+            <button type="button" className="finance-receipt-toggle"
+              aria-label={(expanded ? 'Hide' : 'View') + ' breakdown for ' + receipt.number}
+              aria-expanded={expanded} aria-controls={breakdownId}
+              onClick={() => setExpandedReceipts(current => ({ ...current, [receipt.id]: !current[receipt.id] }))}>
+              <span><strong>{receipt.number}</strong> · {receipt.title}<small>{fullDate(receipt.date)} · {receipt.method} · {receipt.reference}</small></span>
+              <span className="finance-receipt-summary">
+                <strong>{kes(receipt.amountCents)}</strong>
+                <Badge tone={receipt.voidedAt ? 'red' : allocated === receipt.amountCents ? 'green' : 'amber'}>{receipt.voidedAt ? 'Void' : allocated === receipt.amountCents ? 'Allocated' : kes(receipt.amountCents - allocated) + ' unallocated'}</Badge>
+                <span className="finance-receipt-disclosure" aria-hidden="true">{expanded ? 'Hide breakdown' : 'View breakdown'} <ChevronDown size={14} aria-hidden="true" /></span>
+              </span>
+            </button>
+            <div id={breakdownId} className="finance-receipt-body" hidden={!expanded}>
+              {receipt.voidedAt ? <p className="muted">{receipt.reason}</p> : <>
+                <dl className="receipt-totals">
+                  <div><dt>Applied to billing</dt><dd>{kes(applied)}</dd></div>
+                  <div><dt>Earmarked</dt><dd>{kes(allocated)}</dd></div>
+                  <div><dt>Linked spending</dt><dd>{kes(spent)}</dd></div>
+                  <div><dt>Unallocated</dt><dd>{kes(receipt.amountCents - allocated)}</dd></div>
+                </dl>
+                <section className="receipt-detail-section">
+                  <h3>Billing applications</h3>
+                  {applied < receipt.amountCents && <p>{kes(receipt.amountCents - applied)} unapplied to client billing</p>}
+                  {!!plan?.applications.length && <ul className="finance-lines">{plan.applications.map(row => {
+                    const bill = bills.find(item => item.id === row.milestoneId);
+                    return <li key={row.milestoneId}><span>{bill?.reference || bill?.title || 'Billing item'}</span><strong>{kes(row.amountCents)} applied</strong></li>;
+                  })}</ul>}
+                </section>
+                {!!plan?.allocations.length && <section className="receipt-detail-section">
+                  <h3>Earmarks by category</h3>
+                  <p>{kes(allocated - spent)} still earmarked</p>
+                  <ul className="finance-lines">{plan.allocations.map(row => <li key={row.category}>
+                    <span>{fundingCategories[row.category]}</span><strong>{kes(row.amountCents)}</strong>
+                  </li>)}</ul>
+                </section>}
+                {!!links.length && <section className="receipt-detail-section">
+                  <h3>Linked confirmed spending</h3>
+                  <ul className="finance-lines">{links.map(link => {
+                    const outflow = outflows.find(row => row.id === link.outflowId);
+                    return <li key={link.id}><span>{outflow?.label} · {outflow?.reference}<small>{fundingCategories[link.category]}</small></span>
+                      <strong>{kes(link.amountCents)}</strong>
+                      {manageReceipts && <button className="btn small" onClick={() => open({ title: 'Reverse funding link', type: 'finance.funding.reverse', payload: { linkId: link.id }, fields: [text('reason', 'Reason for reversal')], button: 'Reverse link' })}>Reverse link</button>}
+                    </li>;
+                  })}</ul>
+                </section>}
+              </>}
+              <div className="row-actions">
+                <a className="btn small" href={href('/api/receipts/' + receipt.id + '?org=' + encodeURIComponent(organizationId))} target="_blank" rel="noopener noreferrer"><Download size={13} />Receipt PDF</a>
+                {manageReceipts && !receipt.voidedAt && <>
+                  <button className="btn small" onClick={() => editPlan(receipt)}>Apply and allocate</button>
+                  {!!allocated && <button className="btn small" onClick={() => recordLink(receipt)}><Link2 size={13} />Link spending</button>}
+                  <button className="btn small" onClick={() => open({ title: 'Void client receipt', type: 'receipt.void', payload: { receiptId: receipt.id }, fields: [text('reason', 'Reason for voiding')], button: 'Void receipt' })}>Void receipt</button>
+                </>}
+              </div>
+            </div>
+          </article>;
+        })}
+        {!receipts.length && <p className="panel-copy">No client receipts recorded.</p>}
+      </Panel>
+
+      <Panel id="finance-billing" title="Client billing register" description={bills.some(bill => bill.opening) ? 'Approved billing and the amount carried forward at cutoff' : 'Approved fee invoices and payment certificates'}
+        action={manageReceipts && <button className="btn" onClick={recordBill}><Plus size={15} />Record billing item</button>}>
+        {bills.length ? <div className="table-scroll"><table><thead><tr><th scope="col">Billing item</th><th scope="col">Due</th><th scope="col" className="money-column">Billed</th><th scope="col" className="money-column">Receipts applied</th><th scope="col" className="money-column">Balance</th></tr></thead>
+          <tbody>{bills.map(bill => {
+            const applied = amountApplied(state, projectId, bill.id);
+            return <tr key={bill.id}><td>{bill.reference && <strong>{bill.reference} · </strong>}{bill.title}</td><td>{fullDate(bill.dueDate)}</td><td className="money-cell">{kes(bill.amountCents)}</td><td className="money-cell">{kes(applied)}</td><td className="money-cell">{kes(bill.amountCents - applied)}</td></tr>;
+          })}</tbody></table></div> : <p className="panel-copy">No approved billing items recorded.</p>}
+      </Panel>
+    </>}
+
+    {allowProfit && <Panel id="finance-review" title="Profit and forecast review"
+      description={review ? 'Profit through ' + fullDate(review.asOf) + ' · Forecast saved ' + fullDate(dateKey(new Date(review.recordedAt))) : 'Record earned revenue, project costs and the remaining estimate.'}
       action={role === 'admin' && <button className="btn primary" onClick={editReview}><FileText size={15} />{review ? 'Update review' : 'Record finance review'}</button>}>
       {review && figures && <>
         {needsReview && <div className="finance-notice"><Badge tone="amber">Review needed</Badge> Costs, commitments or contract value have changed since this review.</div>}
         <div className="finance-review-grid">
-          <div><h3>Through {review.asOf}</h3><Figures rows={[
+          <div><h3>Through {fullDate(review.asOf)}</h3><Figures rows={[
             ['Earned revenue', review.earnedRevenueCents], ['Approved costs through cutoff', review.approvedCostsCents],
             ['Additional project staff cost', review.staffCostCents], ['Allocated overhead', review.overheadCents], ['Total cost to date', figures.costToDate],
           ]} /></div>
@@ -308,76 +398,10 @@ export function ProjectFinance({ state, project, role, organizationId, saving, e
     </Panel>}
 
     <Panel title="Spending by category" description="Earmarked funds and linked confirmed spending">
-      {funding.length ? <div className="table-scroll"><table><thead><tr><th>Category</th><th>Earmarked</th><th>Spent</th><th>Still earmarked</th></tr></thead>
-        <tbody>{funding.map(row => <tr key={row.category}><td>{fundingCategories[row.category]}</td><td>{kes(row.amountCents)}</td><td>{kes(row.spentCents)}</td><td>{kes(row.amountCents - row.spentCents)}</td></tr>)}</tbody>
+      {funding.length ? <div className="table-scroll"><table><thead><tr><th scope="col">Category</th><th scope="col" className="money-column">Earmarked</th><th scope="col" className="money-column">Spent</th><th scope="col" className="money-column">Still earmarked</th></tr></thead>
+        <tbody>{funding.map(row => <tr key={row.category}><td>{fundingCategories[row.category]}</td><td className="money-cell">{kes(row.amountCents)}</td><td className="money-cell">{kes(row.spentCents)}</td><td className="money-cell">{kes(row.amountCents - row.spentCents)}</td></tr>)}</tbody>
       </table></div> : <p className="panel-copy">Client funds will appear here when Accounts allocates a receipt.</p>}
     </Panel>
-
-    {allowLedger && <>
-      <Panel title="Client billing register" description={bills.some(bill => bill.opening) ? 'Approved billing and the amount carried forward at cutoff' : 'Approved fee invoices and payment certificates'}
-        action={manageReceipts && <button className="btn" onClick={recordBill}><Plus size={15} />Record billing item</button>}>
-        {bills.length ? <div className="table-scroll"><table><thead><tr><th>Billing item</th><th>Due</th><th>Billed</th><th>Receipts applied</th><th>Balance</th></tr></thead>
-          <tbody>{bills.map(bill => {
-            const applied = amountApplied(state, projectId, bill.id);
-            return <tr key={bill.id}><td>{bill.reference && <strong>{bill.reference} · </strong>}{bill.title}</td><td>{bill.dueDate}</td><td>{kes(bill.amountCents)}</td><td>{kes(applied)}</td><td>{kes(bill.amountCents - applied)}</td></tr>;
-          })}</tbody></table></div> : <p className="panel-copy">No approved billing items recorded.</p>}
-      </Panel>
-
-      <Panel title="Client receipts" description="Open a receipt breakdown to see billing applications, allocations and spending"
-        action={manageReceipts && <button className="btn primary" onClick={issueReceipt}><Plus size={15} />Record client receipt</button>}>
-        {unlinkedSpending > 0 && <div className="finance-notice">{kes(unlinkedSpending)} paid out without a receipt funding link.</div>}
-        {receipts.map(receipt => {
-          const plan = state.suite.finance.plans[receipt.id];
-          const links = active.filter(link => link.receiptId === receipt.id);
-          const allocated = plan?.allocations.reduce((sum, row) => sum + row.amountCents, 0) || 0;
-          const applied = plan?.applications.reduce((sum, row) => sum + row.amountCents, 0) || 0;
-          const spent = links.reduce((sum, link) => sum + link.amountCents, 0);
-          const expanded = !!expandedReceipts[receipt.id];
-          const breakdownId = 'receipt-breakdown-' + receipt.id;
-          return <article className="finance-receipt" key={receipt.id}>
-            <button type="button" className="finance-receipt-toggle"
-              aria-expanded={expanded} aria-controls={breakdownId}
-              onClick={() => setExpandedReceipts(current => ({ ...current, [receipt.id]: !current[receipt.id] }))}>
-              <span><strong>{receipt.number}</strong> · {receipt.title}<small>{receipt.date} · {receipt.method} · {receipt.reference}</small></span>
-              <span className="finance-receipt-summary">
-                <strong>{kes(receipt.amountCents)}</strong>
-                <Badge tone={receipt.voidedAt ? 'red' : allocated ? 'green' : 'amber'}>{receipt.voidedAt ? 'Void' : allocated === receipt.amountCents ? 'Allocated' : kes(receipt.amountCents - allocated) + ' unallocated'}</Badge>
-                <span className="btn small finance-receipt-disclosure">{expanded ? 'Hide breakdown' : 'View breakdown'} <ChevronDown size={14} aria-hidden="true" /></span>
-              </span>
-            </button>
-            <div id={breakdownId} className="finance-receipt-body" hidden={!expanded}>
-              {receipt.voidedAt ? <p className="muted">{receipt.reason}</p> : <>
-                <Figures rows={[
-                  ['Applied to client billing', applied], ['Unapplied to client billing', receipt.amountCents - applied],
-                  ['Earmarked for spending', allocated], ['Unallocated funds', receipt.amountCents - allocated],
-                  ['Linked spending', spent], ['Earmarked funds remaining', allocated - spent],
-                ]} />
-                {!!plan?.applications.length && <ul className="finance-lines">{plan.applications.map(row => {
-                  const bill = bills.find(item => item.id === row.milestoneId);
-                  return <li key={row.milestoneId}><span>{bill?.reference || bill?.title || 'Billing item'}</span><strong>{kes(row.amountCents)} applied</strong></li>;
-                })}</ul>}
-                {!!plan?.allocations.length && <ul className="finance-lines">{plan.allocations.map(row => <li key={row.category}><span>{fundingCategories[row.category]}</span><strong>{kes(row.amountCents)} earmarked</strong></li>)}</ul>}
-                {!!links.length && <ul className="finance-lines">{links.map(link => {
-                  const outflow = outflows.find(row => row.id === link.outflowId);
-                  return <li key={link.id}><span>{outflow?.label} · {outflow?.reference}<small>{fundingCategories[link.category]}</small></span><strong>{kes(link.amountCents)}</strong>
-                    {manageReceipts && <button className="btn small" onClick={() => open({ title: 'Reverse funding link', type: 'finance.funding.reverse', payload: { linkId: link.id }, fields: [text('reason', 'Reason for reversal')], button: 'Reverse link' })}>Reverse link</button>}
-                  </li>;
-                })}</ul>}
-              </>}
-              <div className="row-actions">
-                <a className="btn small" href={href('/api/receipts/' + receipt.id + '?org=' + encodeURIComponent(organizationId))} target="_blank" rel="noopener noreferrer"><Download size={13} />Receipt PDF</a>
-                {manageReceipts && !receipt.voidedAt && <>
-                  <button className="btn small" onClick={() => editPlan(receipt)}>Apply and allocate</button>
-                  {!!allocated && <button className="btn small" onClick={() => recordLink(receipt)}><Link2 size={13} />Link spending</button>}
-                  <button className="btn small" onClick={() => open({ title: 'Void client receipt', type: 'receipt.void', payload: { receiptId: receipt.id }, fields: [text('reason', 'Reason for voiding')], button: 'Void receipt' })}>Void receipt</button>
-                </>}
-              </div>
-            </div>
-          </article>;
-        })}
-        {!receipts.length && <p className="panel-copy">No client receipts recorded.</p>}
-      </Panel>
-    </>}
 
     {form && <SuiteForm key={form.title} spec={form} saving={saving} error={error} close={() => setForm(null)} submit={submit} />}
   </div>;

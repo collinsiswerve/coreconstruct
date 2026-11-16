@@ -6,9 +6,9 @@
   max-width: none;
   margin: 0;
   padding: 0;
-  color: #19342c;
-  background: #f8faf7;
-  font-family: Inter, "Segoe UI", Arial, sans-serif;
+  color: #192b24;
+  background: #f4f7f5;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
 }
 
 .signin-main {
@@ -37,7 +37,7 @@
 .signin-content { width: min(100%, 430px); }
 .signin-access { display: inline-flex; align-items: center; gap: 7px; color: #426253; font-size: 13px; font-weight: 650; }
 .signin-content h1 { margin: 16px 0 13px; font-size: clamp(38px, 4.1vw, 59px); letter-spacing: -.046em; line-height: 1.06; font-weight: 720; }
-.signin-content p { margin: 0; color: #495f54; font-size: 16px; line-height: 1.65; }
+.signin-content p { margin: 0; color: #53645c; font-size: 16px; line-height: 1.65; }
 .signin-primary {
   display: flex;
   align-items: center;

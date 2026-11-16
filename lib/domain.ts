@@ -23,7 +23,7 @@ export function moneyToCents(value: unknown): number {
   const [whole, fraction = ''] = s.split('.');
   return Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
 }
-export function kes(cents: number): string { return new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES', maximumFractionDigits: cents % 100 ? 2 : 0 }).format(cents / 100); }
+export function kes(cents: number): string { return new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES', maximumFractionDigits: cents % 100 ? 2 : 0 }).format(cents / 100).replace('Ksh', 'KSh'); }
 export function dateKey(date = new Date()): string { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Nairobi', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date); }
 export function addDays(value: string, days: number): string { const d = new Date(value + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + days); return d.toISOString().slice(0, 10); }
 export function monday(value = dateKey()): string { const d = new Date(value + 'T12:00:00Z'); return addDays(value, -((d.getUTCDay() + 6) % 7)); }

@@ -2,6 +2,7 @@
 import { useEffect,useState } from 'react';
 import { Building2,CheckCircle2,Download,ExternalLink,FileText,MapPin,ShieldCheck } from 'lucide-react';
 import { kes } from '../lib/domain';
+import { brandForeground, fullDate } from '../lib/display';
 import type { clientView } from '../lib/security';
 import { WeeklyDownloads } from './weekly-downloads';
 import { sampleEvidenceAsset } from '../lib/sample-client-updates';
@@ -28,14 +29,98 @@ export function PortalClient({token,projectId,organizationId,sampleSummary}:{tok
  const figures=data.figures as unknown as Record<string,number>,isFixed=data.project.mode==='fixed';
  const concepts = sampleSummary ? data.media.filter(item => item.caption.startsWith('Concept render · ')) : [];
  const evidence = data.media.filter(item => !concepts.includes(item));
- return <div className="portal-shell" style={{'--brand-primary':data.brand.primary} as React.CSSProperties}><header className="portal-top"><div>{data.brand.logoFileId&&<img src={file(data.brand.logoFileId)} alt={data.firm+' logo'}/>}<strong>{data.firm}</strong></div><Badge tone="green"><ShieldCheck size={12}/>{demo ? 'Sample client view' : 'Published project records'}</Badge></header><main className="portal-main"><div className="portal-hero"><p className="eyebrow">YOUR CONSTRUCTION PROJECT</p><h1>{data.project.name}</h1><p><MapPin size={15}/>{data.project.location}</p>{sampleSummary&&<div className="sample-client-details"><span><b>Client</b> {sampleSummary.client}</span><span><b>Project</b> {sampleSummary.code} · {sampleSummary.type}</span><span><b>Started</b> {sampleSummary.start}</span></div>}{role!=='client'&&<div className="notice subtle">Principal / PM preview. Client decisions require the assigned client’s own account.</div>}</div>{error&&<div className="notice error" role="alert">{error}</div>}{message&&<div className="notice subtle"><CheckCircle2 size={16}/>{message}</div>}<section className="portal-scorecard"><div><span>Reported progress</span><strong>{data.project.progress}%</strong><small>{data.project.stage}</small></div><div><span>{isFixed?'Contract including variations':'Approved costs + management fee'}</span><strong>{kes(isFixed?figures.contractCents:figures.totalCents)}</strong></div><div><span>Client payments recorded</span><strong>{kes(figures.receivedCents)}</strong></div><div><span>{figures.balanceCents<0?'Credit balance':'Remaining balance'}</span><strong>{kes(Math.abs(figures.balanceCents))}</strong></div></section>{data.project.currency!=='KES'&&<p className="notice subtle">Reference contract / cost total: {new Intl.NumberFormat('en',{style:'currency',currency:data.project.currency}).format((isFixed?figures.contractCents:figures.totalCents)/100/data.project.fxKesPerUnit)} · manual exchange reference dated {data.project.fxAsOf}. The ledger is held in KES.</p>}<div className="portal-date"><span>PM completion forecast</span><strong>{data.project.estimatedCompletion||'Not recorded'}</strong><small>Updated by the project team and accepted completion-affecting variations.</small></div>{data.project.latitude!==undefined&&<a className="btn" href={`https://www.google.com/maps/search/?api=1&query=${data.project.latitude},${data.project.longitude}`} target="_blank" rel="noopener noreferrer"><MapPin size={15}/>View plot location</a>}
- {concepts.length>0&&<section className="panel portal-panel sample-concept"><div className="panel-heading"><h2>Concept render</h2></div>{concepts.map(item=><figure key={item.id}><a href={mediaFile(item.fileId)} target="_blank" rel="noopener noreferrer"><img src={mediaFile(item.fileId)} alt={item.caption} fetchPriority="high" /></a><figcaption>{item.caption.replace('Concept render · ', '')}</figcaption></figure>)}</section>}
- <section className="panel portal-panel"><div className="panel-heading"><h2>Progress updates</h2></div>{data.reports.slice().sort((a,b)=>b.weekStart.localeCompare(a.weekStart)).map(r=><article className="portal-update" key={r.id}><div className="portal-update-head"><Badge>Week of {r.weekStart}</Badge><WeeklyDownloads endpoint={endpoint} weekStart={r.weekStart}/></div><h3>{r.stage} · {r.progress}% reported progress</h3><p className="pre-wrap">{r.summary}</p><div className="report-two-col"><div><h4>Next steps</h4><p className="pre-wrap">{r.nextSteps||'None recorded.'}</p></div><div><h4>Decisions and open issues</h4><p className="pre-wrap">{r.risks||'None recorded.'}</p></div></div></article>)}{!data.reports.length&&<p className="panel-copy">The team has not published a weekly update yet.</p>}</section>
+ const reports = data.reports.slice().sort((a, b) => b.weekStart.localeCompare(a.weekStart));
+ const [latest, ...history] = reports;
+ const awaitingDecision = data.variations.filter(item => item.status === 'sent');
+ const decisionHistory = data.variations.filter(item => item.status !== 'sent');
+ const invoiceBalance = data.milestones.reduce((sum, bill) => sum + Math.max(0, bill.amountCents - bill.appliedCents), 0);
+ const drawingsToReview = role === 'client' && data.modules.design ? data.drawings.filter(drawing =>
+   !drawing.designAccepted && (!sampleSummary || /^A-/.test(drawing.sheetCode))).length : 0;
+ const brand = { '--brand-primary': data.brand.primary, '--brand-foreground': brandForeground(data.brand.primary) } as React.CSSProperties;
+
+ function renderUpdate(report: PortalData['reports'][number]) {
+   return <article className="portal-update" key={report.id}>
+     <div className="portal-update-head"><time dateTime={report.weekStart}>Week of {fullDate(report.weekStart)}</time>
+       <WeeklyDownloads endpoint={endpoint} weekStart={report.weekStart} /></div>
+     <h3>{report.stage} · {report.progress}% reported progress</h3>
+     <p className="pre-wrap">{report.summary}</p>
+     <div className="report-two-col">
+       {report.nextSteps && <div><h4>Next steps</h4><p className="pre-wrap">{report.nextSteps}</p></div>}
+       {report.risks && <div><h4>Decisions and open issues</h4><p className="pre-wrap">{report.risks}</p></div>}
+     </div>
+   </article>;
+ }
+
+ function renderVariation(variation: PortalData['variations'][number]) {
+   return <article className="portal-update portal-decision-entry" key={variation.id}>
+     <div className="section-actions">
+       <Badge tone={variation.status === 'accepted' ? 'green' : variation.status === 'sent' ? 'amber' : 'neutral'}>
+         {variation.number} · Revision {variation.revision} · {variation.status === 'sent' ? 'Awaiting decision'
+           : variation.status === 'accepted' ? 'Accepted' : 'Rejected'}
+       </Badge>
+       <strong>{kes(variation.amountCents)}</strong>
+     </div>
+     <h3>{variation.title}</h3>
+     <p className="pre-wrap">{variation.description}</p>
+     <p>Time assessment · {variation.days} days · {variation.affectsCompletion ? 'Affects completion forecast' : 'Activity effect only'}</p>
+     {variation.programmeReason && <p>{variation.programmeReason}</p>}
+     {variation.decisionAt && <p>Decision recorded for revision {variation.approvedRevision ?? variation.revision} · {fullDate(variation.decisionAt)}</p>}
+     {variation.status === 'sent' && role === 'client' && <ClientDecision key={variation.id + ':' + variation.revision} busy={busy}
+       revision={variation.revision} onDecision={decision => void decide(variation.id, variation.revision, decision)} />}
+   </article>;
+ }
+
+ return <div className="portal-shell" style={brand}>
+   <header className="portal-top"><div>{data.brand.logoFileId && <img src={file(data.brand.logoFileId)} alt={data.firm + ' logo'} />}
+     <strong>{data.firm}</strong></div>
+     <Badge><ShieldCheck size={14} aria-hidden="true" />{demo ? 'Sample client view' : 'Published project records'}</Badge>
+   </header>
+   <main className="portal-main">
+     <div className="portal-hero"><h1>{data.project.name}</h1><p><MapPin size={16} aria-hidden="true" />{data.project.location}</p>
+       {sampleSummary && <div className="sample-client-details"><span><b>Client</b> {sampleSummary.client}</span>
+         <span><b>Project</b> {sampleSummary.code} · {sampleSummary.type}</span><span><b>Started</b> {fullDate(sampleSummary.start)}</span></div>}
+       {role !== 'client' && <div className="notice subtle">Principal / PM preview. Client decisions require the assigned client’s account.</div>}
+     </div>
+     {error && <div className="notice error" role="alert">{error}</div>}
+     {message && <div className="notice subtle" role="status"><CheckCircle2 size={16} />{message}</div>}
+     <section className="portal-scorecard" aria-label="Project and payment summary">
+       <div><span>Reported progress</span><strong>{data.project.progress}%</strong><small>{data.project.stage}</small></div>
+       <div><span>{isFixed ? 'Contract including variations' : 'Approved costs + management fee'}</span><strong>{kes(isFixed ? figures.contractCents : figures.totalCents)}</strong></div>
+       <div><span>Client payments recorded</span><strong>{kes(figures.receivedCents)}</strong></div>
+       <div><span>{figures.balanceCents < 0 ? 'Credit balance' : isFixed ? 'Remaining contract balance' : 'Outstanding project balance'}</span><strong>{kes(Math.abs(figures.balanceCents))}</strong></div>
+     </section>
+     {data.project.currency !== 'KES' && <p className="notice subtle">Reference value {new Intl.NumberFormat('en', { style: 'currency', currency: data.project.currency }).format((isFixed ? figures.contractCents : figures.totalCents) / 100 / data.project.fxKesPerUnit)} · Exchange reference {fullDate(data.project.fxAsOf)} · Ledger in KES</p>}
+     <div className="portal-summary-actions">
+       {data.project.estimatedCompletion && <p>PM completion forecast <strong>{fullDate(data.project.estimatedCompletion)}</strong></p>}
+       {data.milestones.length > 0 && <a href="#client-billing">Balance on published bills <strong>{kes(invoiceBalance)}</strong></a>}
+       {data.project.latitude !== undefined && <a href={'https://www.google.com/maps/search/?api=1&query=' + data.project.latitude + ',' + data.project.longitude}
+         target="_blank" rel="noopener noreferrer"><MapPin size={15} aria-hidden="true" />View plot location</a>}
+     </div>
+     {!!awaitingDecision.length && <section className="panel portal-panel">
+       <div className="panel-heading"><h2>Changes for your decision</h2></div>{awaitingDecision.map(renderVariation)}
+     </section>}
+     <section className="panel portal-panel portal-latest">
+       <div className="panel-heading">
+         <h2>Latest progress update</h2>
+         {drawingsToReview > 0 && <a className="btn" href="#client-drawings">Review drawings <Badge tone="amber">{drawingsToReview}</Badge></a>}
+       </div>
+       {latest ? renderUpdate(latest) : <p className="panel-copy">The team has not published a weekly update yet.</p>}
+       {!!history.length && <details className="portal-history">
+         <summary>Earlier updates ({history.length})</summary>{history.map(renderUpdate)}
+       </details>}
+     </section>
+     {!!concepts.length && <section className="panel portal-panel sample-concept">
+       <div className="panel-heading"><h2>Concept render</h2></div>
+       {concepts.map(item => <figure key={item.id}><a href={mediaFile(item.fileId)} target="_blank" rel="noopener noreferrer">
+         <img src={mediaFile(item.fileId)} alt={item.caption} loading="lazy" /></a><figcaption>{item.caption.replace('Concept render · ', '')}</figcaption>
+       </figure>)}
+     </section>}
  {evidence.length>0&&<section className="panel portal-panel"><div className="panel-heading"><h2>Reviewed site evidence</h2></div><div className="media-grid">{evidence.map(m=><article className="media-card" key={m.id}><a href={mediaFile(m.fileId)} target="_blank" rel="noopener noreferrer">{m.contentType==='video/mp4'?<video src={mediaFile(m.fileId)} controls preload="metadata"/>:<img src={mediaFile(m.fileId)} alt={m.caption} loading="lazy"/>}</a><div><Badge tone={m.locationStatus==='matched'?'green':'amber'}>{m.locationStatus==='matched'?'Reported location match':m.locationStatus+' location'}</Badge><p>{m.caption}</p><small>{m.stage} · {m.createdAt.slice(0,10)}</small></div></article>)}</div></section>}
- {data.modules.design&&<section className="panel portal-panel"><div className="panel-heading"><h2>Current published drawings</h2></div>{data.drawings.map(d=><div className="portal-file" key={d.id}><FileText size={20}/><div><strong>{d.sheetCode} · {d.title}</strong><small>Revision {d.revision} · current issued drawing</small></div><a className="btn small" href={file(d.fileId)} target="_blank" rel="noopener noreferrer">Open PDF <ExternalLink size={12}/></a>{d.designAccepted?<Badge tone="green">Design accepted</Badge>:role==='client'&&(!sampleSummary||/^A-/.test(d.sheetCode))&&<button className="btn small" disabled={busy} onClick={()=>void decide(d.id,d.revision,'accept','design.accept')}>Accept design revision {d.revision}</button>}</div>)}{!data.drawings.length&&<p className="panel-copy">No issued drawings have been published yet.</p>}</section>}
- {data.modules.variations&&<section className="panel portal-panel"><div className="panel-heading"><h2>Changes for your decision</h2></div>{data.variations.map(v=><article className="portal-update" key={v.id}><div className="section-actions"><Badge tone={v.status==='accepted'?'green':'amber'}>{v.number} · revision {v.revision} · {v.status}</Badge><strong>{kes(v.amountCents)}</strong></div><h3>{v.title}</h3><p className="pre-wrap">{v.description}</p><p>Time assessment: {v.days} days · {v.affectsCompletion?'affects completion forecast':'activity effect only'}.</p>{v.programmeReason&&<p>{v.programmeReason}</p>}
- {v.decisionAt && <p className="muted">{v.status==='accepted'?'Accepted':'Rejected'} revision {v.approvedRevision ?? v.revision} · {v.decisionAt.slice(0,10)}</p>}{v.status==='sent'&&role==='client'&&<ClientDecision key={v.id+':'+v.revision} busy={busy} revision={v.revision} onDecision={decision=>void decide(v.id,v.revision,decision)}/>}</article>)}{!data.variations.length&&<p className="panel-copy">No variations have been sent for a client decision.</p>}</section>}
- {data.milestones.length>0&&<section className="panel portal-panel">
+ {data.modules.design&&<section id="client-drawings" className="panel portal-panel"><div className="panel-heading"><h2>Current published drawings</h2></div>{data.drawings.map(d=><div className="portal-file" key={d.id}><FileText size={20}/><div><strong>{d.sheetCode} · {d.title}</strong><small>Revision {d.revision} · current issued drawing</small></div><a className="btn small" href={file(d.fileId)} target="_blank" rel="noopener noreferrer">Open PDF <ExternalLink size={12}/></a>{d.designAccepted?<Badge tone="green">Design accepted</Badge>:role==='client'&&(!sampleSummary||/^A-/.test(d.sheetCode))&&<button className="btn small" disabled={busy} onClick={()=>void decide(d.id,d.revision,'accept','design.accept')}>Accept design revision {d.revision}</button>}</div>)}{!data.drawings.length&&<p className="panel-copy">No issued drawings have been published yet.</p>}</section>}
+ {!!decisionHistory.length && <section className="panel portal-panel">
+   <div className="panel-heading"><h2>Decision history</h2></div>{decisionHistory.map(renderVariation)}
+ </section>}
+ {data.milestones.length>0&&<section id="client-billing" className="panel portal-panel">
    <div className="panel-heading"><h2>Invoices and payment certificates</h2></div>
    {data.milestones.map(bill=><div className="portal-file" key={bill.id}><FileText size={20}/><div><strong>{bill.reference ? bill.reference+' · ' : ''}{bill.title}</strong>
    <small>{kes(bill.amountCents)} billed · {kes(bill.appliedCents)} received against this item · {kes(bill.amountCents-bill.appliedCents)} due</small></div></div>)}

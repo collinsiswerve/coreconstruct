@@ -16,7 +16,13 @@ export function workspaceReturnPath(value: unknown): string {
   const org = url.searchParams.get('org');
   const view = url.searchParams.get('view');
   if (recordPath.test(path) && org && /^[a-zA-Z0-9_-]{1,160}$/.test(org)) parameters.set('org', org);
-  if (path === '/' && view && /^[a-z-]{1,40}$/.test(view)) parameters.set('view', view);
+  if (path === '/') {
+    if (view && /^[a-z-]{1,40}$/.test(view)) parameters.set('view', view);
+    const project = url.searchParams.get('project');
+    if (project && /^[a-zA-Z0-9_-]{1,160}$/.test(project)) parameters.set('project', project);
+    const week = url.searchParams.get('week');
+    if (week && /^\d{4}-\d{2}-\d{2}$/.test(week)) parameters.set('week', week);
+  }
   return path + (parameters.size ? '?' + parameters.toString() : '');
 }
 

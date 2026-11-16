@@ -10,6 +10,7 @@ test('sign-in resumes internal workspace and invitation links and drops other de
   assert.equal(chatGPTSignInPath(invitation), '/signin-with-chatgpt?return_to=' + encodeURIComponent(invitation));
   assert.equal(chatGPTSignOutPath(), '/signout-with-chatgpt?return_to=%2Flogin');
   assert.equal(workspaceReturnPath('/?view=billing'), '/?view=billing');
+  assert.equal(workspaceReturnPath('/?view=finance&project=m6-09&week=2026-11-09'), '/?view=finance&project=m6-09&week=2026-11-09');
   assert.equal(workspaceReturnPath('/receipts/sample%3A1?org=firm-owner'), '/receipts/sample%3A1?org=firm-owner');
   assert.equal(workspaceReturnPath('/client/assigned-project?org=firm-abc&extra=discard'), '/client/assigned-project?org=firm-abc');
   for (const path of ['https://example.invalid', '//example.invalid', '/api/workspace', '/callback', '/join/invalid']) {
