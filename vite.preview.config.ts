@@ -8,6 +8,10 @@ export default defineConfig({
   plugins: [react()],
   css: { postcss: fileURLToPath(new URL('.', import.meta.url)) },
   build: {
+    rolldownOptions: { input: [
+      fileURLToPath(new URL('./preview/index.html', import.meta.url)),
+      fileURLToPath(new URL('./preview/login/index.html', import.meta.url)),
+    ] },
     outDir: fileURLToPath(new URL('./dist/pages-demo', import.meta.url)),
     emptyOutDir: true,
   },

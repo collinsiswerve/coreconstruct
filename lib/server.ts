@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers';
-import { getChatGPTUser } from '../app/chatgpt-auth';
+import { getChatGPTUser, type ChatGPTUser } from '../app/chatgpt-auth';
 import { DomainError, emptyState } from './domain';
 import { normalizeState } from './suite';
 import type { Actor, Role, SuiteState } from './suite-types';
@@ -11,12 +11,47 @@ export async function readJson(request:Request):Promise<Record<string,unknown>> 
 export async function signedIn(){const user=await getChatGPTUser();if(!user)throw new DomainError('Sign in to open your workspace.',401);return user;}
 type MemberRow={organization_id:string;user_id:string;email:string;display_name:string;role:Role;project_roles:string;active:number};
 export async function membershipsFor(userId:string){return (await database().prepare('SELECT m.*, o.name AS organization_name FROM memberships m JOIN organizations o ON o.id=m.organization_id WHERE m.user_id=? AND m.active=1').bind(userId).all<MemberRow&{organization_name:string}>()).results;}
+
+async function mayStartFirm(userId: string): Promise<boolean> {
+  const allowed = (env.CORECONSTRUCT_BOOTSTRAP_PRINCIPALS ?? '').split(',').map(value => value.trim());
+  if (!allowed.includes(userId)) return false;
+  const membership = await database().prepare('SELECT 1 FROM memberships WHERE user_id=? LIMIT 1').bind(userId).first();
+  return !membership;
+}
+
+export async function mayOpenWorkspace(user: ChatGPTUser): Promise<boolean> {
+  return (await membershipsFor(user.userId)).length > 0 || await mayStartFirm(user.userId);
+}
+
+async function startApprovedFirm(user: ChatGPTUser) {
+  const db = database();
+  const at = new Date().toISOString();
+  await db.batch([
+    db.prepare(`
+      INSERT INTO organizations (id, owner_id, name, created_at)
+      SELECT ?, ?, 'My construction firm', ? WHERE NOT EXISTS (SELECT 1 FROM memberships WHERE user_id=?)
+      ON CONFLICT(id) DO NOTHING
+    `).bind(user.userId, user.userId, at, user.userId),
+    db.prepare(`
+      INSERT INTO memberships (id, organization_id, user_id, email, display_name, role, project_roles, active)
+      SELECT ?, id, ?, ?, ?, 'admin', '{}', 1 FROM organizations WHERE id=? AND owner_id=?
+        AND NOT EXISTS (SELECT 1 FROM memberships WHERE user_id=?)
+      ON CONFLICT(id) DO NOTHING
+    `).bind(user.userId + ':' + user.userId, user.userId, user.email, user.displayName, user.userId, user.userId, user.userId),
+  ]);
+}
+
 export async function context(request:Request,explicitOrganizationId?:string){
  const user=await signedIn(),expectedUser=request.headers.get('x-coreconstruct-user'),db=database();
  if(expectedUser&&expectedUser!==user.userId)throw new DomainError('Sign in with the account that prepared this save.',401);
+ const requestedOrg=explicitOrganizationId||request.headers.get('x-organization-id')||new URL(request.url).searchParams.get('org');
  let list=await membershipsFor(user.userId);
- if(!list.length){const at=new Date().toISOString();await db.batch([db.prepare('INSERT INTO organizations (id,owner_id,name,created_at) VALUES (?,?,?,?) ON CONFLICT(id) DO NOTHING').bind(user.userId,user.userId,'My construction firm',at),db.prepare('INSERT INTO memberships (id,organization_id,user_id,email,display_name,role,project_roles,active) VALUES (?,?,?,?,?,?,?,1) ON CONFLICT(id) DO NOTHING').bind(user.userId+':'+user.userId,user.userId,user.userId,user.email.toLowerCase(),user.displayName,'admin','{}')]);list=await membershipsFor(user.userId);}
- const org=explicitOrganizationId||request.headers.get('x-organization-id')||new URL(request.url).searchParams.get('org')||list[0]?.organization_id;
+ if(!list.length&&(!requestedOrg||requestedOrg===user.userId)&&await mayStartFirm(user.userId)){
+   await startApprovedFirm(user);
+   list=await membershipsFor(user.userId);
+ }
+ if(!list.length)throw new DomainError('Your account needs an active firm invitation. Ask your firm principal to confirm access.',403,'workspace_invitation_required');
+ const org=requestedOrg||list[0].organization_id;
  const member=list.find(m=>m.organization_id===org);if(!member)throw new DomainError('You do not have access to this firm.',403);
  const actor:Actor={id:user.userId,name:user.displayName,email:user.email.toLowerCase(),role:member.role,projectRoles:JSON.parse(member.project_roles),organizationId:org};
  const row=await db.prepare('SELECT data,version FROM workspaces WHERE owner_id=?').bind(org).first<{data:string;version:number}>();

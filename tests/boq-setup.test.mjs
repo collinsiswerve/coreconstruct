@@ -4,7 +4,7 @@ import readSheet from 'read-excel-file/node';
 import { command, databaseFixture, moduleLoader, request } from './helpers.mjs';
 
 test('Excel BOQ preview, project access and opening balances reconcile through the workspace and client APIs', async () => {
-  const fixture = databaseFixture();
+  const fixture = databaseFixture('owner');
   const load = moduleLoader(fixture);
   const api = await load('app/api/workspace/route.ts');
   const team = await load('app/api/team/route.ts');

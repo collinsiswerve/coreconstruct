@@ -6,7 +6,7 @@ import { unzipSync } from 'fflate';
 import { command, databaseFixture, moduleLoader, request } from './helpers.mjs';
 
 test('a new fictional firm completes setup, closes its first week and publishes to an assigned client', async () => {
-  const fixture = databaseFixture();
+  const fixture = databaseFixture('ridgeway-principal');
   const load = moduleLoader(fixture);
   const workspace = await load('app/api/workspace/route.ts');
   const team = await load('app/api/team/route.ts');

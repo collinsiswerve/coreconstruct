@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { command, databaseFixture, moduleLoader, request } from './helpers.mjs';
 
 test('weekly wages and matched supplier costs reconcile through approval, payment and correction', async () => {
-  const fixture = databaseFixture();
+  const fixture = databaseFixture('owner');
   const load = moduleLoader(fixture);
   const { addDays, dateKey, monday, wagebillPreview, wagebillPreviewKey } = await load('lib/domain.ts');
   const { operationsSampleId } = await load('lib/sample-operations.ts');

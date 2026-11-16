@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { command, databaseFixture, moduleLoader, request } from './helpers.mjs';
 
-const fixture = databaseFixture();
+const fixture = databaseFixture('director', 'sample-owner', 'sample-portfolio-owner', 'sample-portfolio-fresh');
 const load = moduleLoader(fixture);
 const api = await load('app/api/workspace/route.ts');
 const portal = await load('app/api/client-view/route.ts');

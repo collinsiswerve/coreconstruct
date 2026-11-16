@@ -6,7 +6,7 @@ import { unzipSync, strFromU8 } from 'fflate';
 import { command, databaseFixture, moduleLoader, request } from './helpers.mjs';
 
 test('current drawings, exact variation decisions and published exports use the assigned project', async () => {
-  const fixture = databaseFixture();
+  const fixture = databaseFixture('owner');
   const load = moduleLoader(fixture);
   const workspace = await load('app/api/workspace/route.ts');
   const portal = await load('app/api/client-view/route.ts');

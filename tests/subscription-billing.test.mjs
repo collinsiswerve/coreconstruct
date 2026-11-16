@@ -23,7 +23,7 @@ test('test billing preserves the monthly anchor and opens an invoice only for a 
 });
 
 test('the principal can rehearse and review billing across renewals with firm-scoped access', async () => {
-  const fixture = databaseFixture();
+  const fixture = databaseFixture('subscription-owner', 'unrelated-firm');
   const load = moduleLoader(fixture);
   const api = await load('app/api/workspace/route.ts');
   const team = await load('app/api/team/route.ts');

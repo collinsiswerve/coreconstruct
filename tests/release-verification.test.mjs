@@ -7,7 +7,7 @@ import { unzipSync, zipSync } from 'fflate';
 import { readRecoveryArchive, restoreRecoveryArchive } from '../lib/recovery.mjs';
 import { command, databaseFixture, moduleLoader, request } from './helpers.mjs';
 
-const fixture = databaseFixture();
+const fixture = databaseFixture('release-owner', 'other-firm-owner');
 const load = moduleLoader(fixture);
 const workspace = await load('app/api/workspace/route.ts');
 const files = await load('app/api/files/route.ts');

@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { command, databaseFixture, moduleLoader, request } from './helpers.mjs';
 
 test('pilot results compare the baseline, retain distinct weekly records and protect the principal’s data', async () => {
-  const fixture = databaseFixture();
+  const fixture = databaseFixture('pilot-test-principal', 'different-firm-principal');
   const load = moduleLoader(fixture);
   const api = await load('app/api/workspace/route.ts');
   const team = await load('app/api/team/route.ts');

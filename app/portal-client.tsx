@@ -6,6 +6,7 @@ import type { clientView } from '../lib/security';
 import { WeeklyDownloads } from './weekly-downloads';
 import { sampleEvidenceAsset } from '../lib/sample-client-updates';
 import { Badge } from './ui';
+import { loginPagePath } from '../lib/auth-navigation';
 import { useWorkspaceRuntime } from './workspace-runtime';
 type PortalData=ReturnType<typeof clientView>;
 type SampleSummary = { code: string; client: string; start: string; type: string };
@@ -23,7 +24,7 @@ export function PortalClient({token,projectId,organizationId,sampleSummary}:{tok
    const sample = sampleEvidenceAsset(id);
    return sample ? href(sample) : file(id);
  };
- if(!data)return <div className="portal-shell"><div className="portal-login"><Building2 size={30}/><h1>Client project view</h1><p>{error||'Opening the published project records…'}</p>{error&&!demo&&<><a className="btn primary" href={'/signin-with-chatgpt?return_to='+encodeURIComponent(projectId?'/client/'+projectId+'?org='+encodeURIComponent(organizationId||''):'/portal/'+token)} target="_top">Sign in with your invited account</a><button className="btn" onClick={()=>void load()}>Try again</button></>}</div></div>;
+ if(!data)return <div className="portal-shell"><div className="portal-login"><Building2 size={30}/><h1>Client project view</h1><p>{error||'Opening the published project records…'}</p>{error&&!demo&&<><a className="btn primary" href={loginPagePath(projectId ? '/client/' + encodeURIComponent(projectId) + '?org=' + encodeURIComponent(organizationId || '') : '/portal/' + token)} target="_top">Sign in with your invited account</a><button className="btn" onClick={()=>void load()}>Try again</button></>}</div></div>;
  const figures=data.figures as unknown as Record<string,number>,isFixed=data.project.mode==='fixed';
  const concepts = sampleSummary ? data.media.filter(item => item.caption.startsWith('Concept render · ')) : [];
  const evidence = data.media.filter(item => !concepts.includes(item));

@@ -18,6 +18,10 @@ The supported hosted environment supplies the trusted ChatGPT identity gateway, 
 
 The application trusts platform-injected identity headers. Do not expose the underlying Worker directly to arbitrary requests that can set those headers. A deployment outside this gateway needs a real authentication/session integration before use; copying the application to GitHub Pages or an unprotected Worker is insufficient.
 
+The private workspace uses a branded `/login` route and the Sites-managed ChatGPT sign-in session. The server grants workspace access only to active memberships. An approved first principal may initialise their firm on first use when their exact provider account ID is configured in the private runtime variable `CORECONSTRUCT_BOOTSTRAP_PRINCIPALS` (comma-separated). Accounts with a revoked membership do not qualify for this initial setup. Configure new pilot principals explicitly and share staff and client access by invitation. The GitHub Pages login page hands off to the private host and stores no authentication credentials.
+
+After authentication, protected links can resume only documented application routes. Membership and project permissions are checked when the server serves records, including from links. CoreConstruct relies on the managed sign-in provider for credentials, account recovery, session cookies and MFA. The application does not enforce a firm-wide MFA policy.
+
 To provision an independent deployment, configure trusted authentication, private D1/R2 bindings, the encryption secret, all SQL migrations in order, and the same runtime build. A plain clone can run automated checks without any production secrets. The supplied GitHub workflow is CI, not an automatic live deployment.
 
 ## Pilot limits and remaining engineering

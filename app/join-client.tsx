@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Building2 } from 'lucide-react';
 import { useWorkspaceRuntime } from './workspace-runtime';
+import { AccountSignOut } from './account-sign-out';
 
 export default function JoinClient({ token }: { token: string }) {
   const { request, demo } = useWorkspaceRuntime();
@@ -37,7 +38,7 @@ export default function JoinClient({ token }: { token: string }) {
     {error && <div className="notice error" role="alert">{error}</div>}
     {done ? <a className="btn primary" href={demo?.onboardingHref ?? '/'}>{demo?.onboarding ? 'Return to workspace setup' : 'Open workspace'}</a> : <>
       <button className="btn primary" disabled={busy} onClick={() => void accept()}>{busy ? 'Checking invitation…' : 'Accept project invitation'}</button>
-      {!demo && <a className="btn" href={'/signin-with-chatgpt?return_to=' + encodeURIComponent('/join/' + token)} target="_top">Sign in with invited account</a>}
+      {!demo && <AccountSignOut className="btn" returnTo={'/join/' + token}>Sign out to switch accounts</AccountSignOut>}
     </>}
   </section></div>;
 }
