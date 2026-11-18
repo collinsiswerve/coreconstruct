@@ -2,7 +2,8 @@
 import { useEffect,useState } from 'react';
 import { Building2,CheckCircle2,Download,ExternalLink,FileText,MapPin,ShieldCheck } from 'lucide-react';
 import { kes } from '../lib/domain';
-import { brandForeground, fullDate } from '../lib/display';
+import { displayTheme } from '../lib/appearance';
+import { brandForeground, compactKes, fullDate } from '../lib/display';
 import type { clientView } from '../lib/security';
 import { WeeklyDownloads } from './weekly-downloads';
 import { sampleEvidenceAsset } from '../lib/sample-client-updates';
@@ -20,6 +21,7 @@ export function PortalClient({token,projectId,organizationId,sampleSummary}:{tok
  async function load(){try{const r=await fetch(endpoint,{cache:'no-store'}),v=await r.json() as {portal:PortalData;organizationId:string;actor:{role:string};error?:string};if(!r.ok)throw new Error(v.error||'Unable to open the client view.');setData(v.portal);setOrg(v.organizationId);setRole(v.actor.role);setError('');}catch(e){setData(null);setError(e instanceof Error?e.message:'Unable to connect.');}}
  useEffect(()=>{void load();},[token,projectId,organizationId]);
  async function decide(id:string,revision:number,decision:string,type='variation.decide'){setBusy(true);setError('');try{const r=await fetch('/api/workspace',{method:'POST',headers:{'Content-Type':'application/json','x-organization-id':org},body:JSON.stringify({id:crypto.randomUUID(),type,payload:type==='design.accept'?{drawingId:id,revision}:{variationId:id,revision,decision}})}),v=await r.json() as {error?:string};if(!r.ok){if(r.status===409)await load();throw new Error(v.error||'Decision could not be recorded.');}setMessage('Your decision on revision '+revision+' has been recorded.');await load();}catch(e){setError(e instanceof Error?e.message:'Unable to connect.');}finally{setBusy(false);}}
+ useEffect(() => { document.documentElement.dataset.theme = displayTheme(data?.brand.theme); }, [data?.brand.theme]);
  const file = (id: string) => href('/api/files/' + encodeURIComponent(id) + '?org=' + encodeURIComponent(org));
  const mediaFile = (id: string) => {
    const sample = sampleEvidenceAsset(id);
@@ -85,9 +87,9 @@ export function PortalClient({token,projectId,organizationId,sampleSummary}:{tok
      {message && <div className="notice subtle" role="status"><CheckCircle2 size={16} />{message}</div>}
      <section className="portal-scorecard" aria-label="Project and payment summary">
        <div><span>Reported progress</span><strong>{data.project.progress}%</strong><small>{data.project.stage}</small></div>
-       <div><span>{isFixed ? 'Contract including variations' : 'Approved costs + management fee'}</span><strong>{kes(isFixed ? figures.contractCents : figures.totalCents)}</strong></div>
-       <div><span>Client payments recorded</span><strong>{kes(figures.receivedCents)}</strong></div>
-       <div><span>{figures.balanceCents < 0 ? 'Credit balance' : isFixed ? 'Remaining contract balance' : 'Outstanding project balance'}</span><strong>{kes(Math.abs(figures.balanceCents))}</strong></div>
+       <div><span>{isFixed ? 'Contract including variations' : 'Approved costs + management fee'}</span><strong title={kes(isFixed ? figures.contractCents : figures.totalCents)} aria-label={kes(isFixed ? figures.contractCents : figures.totalCents)}>{compactKes(isFixed ? figures.contractCents : figures.totalCents)}</strong></div>
+       <div><span>Client payments recorded</span><strong title={kes(figures.receivedCents)} aria-label={kes(figures.receivedCents)}>{compactKes(figures.receivedCents)}</strong></div>
+       <div><span>{figures.balanceCents < 0 ? 'Credit balance' : isFixed ? 'Remaining contract balance' : 'Outstanding project balance'}</span><strong title={kes(Math.abs(figures.balanceCents))} aria-label={kes(Math.abs(figures.balanceCents))}>{compactKes(Math.abs(figures.balanceCents))}</strong></div>
      </section>
      {data.project.currency !== 'KES' && <p className="notice subtle">Reference value {new Intl.NumberFormat('en', { style: 'currency', currency: data.project.currency }).format((isFixed ? figures.contractCents : figures.totalCents) / 100 / data.project.fxKesPerUnit)} · Exchange reference {fullDate(data.project.fxAsOf)} · Ledger in KES</p>}
      <div className="portal-summary-actions">

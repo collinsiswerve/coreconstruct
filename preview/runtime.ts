@@ -62,6 +62,7 @@ export async function createDemoRuntime() {
       if (state.schemaVersion === 1 && state.suite?.version === 2) {
         const previousCount = state.projects.length;
         current = normalizeState(state);
+        if (params.get('theme') === 'site-ultra') current.suite.brand.theme = 'site-ultra';
         if (isPortfolio || isOnboarding || isBilling) return current;
         if (!state.suite.finance) addSampleFinance(current);
         const sampleProjects = current.projects.filter(isFinanceSample);

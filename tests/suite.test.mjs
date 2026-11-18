@@ -5,6 +5,23 @@ const admin={id:'owner',name:'Principal',email:'owner@example.test',role:'admin'
 const at='2026-10-30T12:00:00Z';let seq=0;const id=()=>`test-record-${++seq}`;
 function fresh(){let s=S.normalizeState(D.emptyState());return S.executeSuite(s,command('project.create',{name:'Test site',location:'Kiambu',budget:'100000',contract:'150000'}),admin,at,id);}
 function run(s,type,payload,actor=admin){A.authorize(s,command(type,payload),actor);return S.executeSuite(s,command(type,payload),actor,at,id);}
+test('RFI resolution preserves the question context and enforces the assigned foreman', () => {
+  let state = fresh();
+  const projectId = state.projects[0].id;
+  const foreman = { ...admin, id: 'foreman', name: 'Site foreman', email: 'foreman@example.test', role: 'foreman', projectRoles: { [projectId]: 'foreman' } };
+  state = run(state, 'action.create', { projectId, kind: 'rfi', title: 'Confirm drainage revision', owner: foreman.email, dueDate: '2026-11-02', note: 'Check drainage drawing revision 2.' });
+  const actionId = state.suite.actions[0].id;
+  const otherForeman = { ...foreman, id: 'other-foreman', email: 'other@example.test', name: 'Other foreman' };
+  assert.throws(() => run(state, 'action.close', { actionId, note: 'Checked.' }, otherForeman), /responsible person/);
+  assert.throws(() => run(state, 'action.close', { actionId, note: '' }, foreman), /Closure note/);
+  assert.equal(state.suite.actions[0].status, 'open');
+  state = run(state, 'action.close', { actionId, note: 'Revision 2 matches the inspection.' }, foreman);
+  const action = state.suite.actions[0];
+  assert.equal(action.status, 'closed');
+  assert.equal(action.closedAt, at);
+  assert.equal(action.note, 'Check drainage drawing revision 2.\n\nResolution\nRevision 2 matches the inspection.');
+  assert.throws(() => run(state, 'action.close', { actionId, note: 'Repeat.' }, foreman), /already closed/);
+});
 function procurement(){let s=fresh();const pid=s.projects[0].id;pm.projectRoles={[pid]:'pm'};s=run(s,'boq.import',{projectId:pid,rows:[{code:'C01',description:'Cement',unit:'bag',quantity:'100',clientRate:'900',allowance:'80000',labourAllowance:'10000'}]});s=run(s,'material.create',{sku:'CEMENT',name:'Cement',unit:'bag'});s=run(s,'order.create',{projectId:pid,supplier:'Test Supplier',lines:[{materialId:s.suite.materials[0].id,boqItemId:s.suite.boq[0].id,quantity:'10',rate:'700'}]});s=run(s,'order.approve',{orderId:s.suite.orders[0].id},pm);return s;}
 function delivery(s,qty='10'){const o=s.suite.orders[0];s=run(s,'delivery.submit',{orderId:o.id,lineId:o.lines[0].id,quantity:qty,noteReference:'DN001',offloadFileId:'offload',noteFileId:'note',location:{exceptionReason:'Manual site check; indoor GPS unavailable'}});return run(s,'delivery.approve',{deliveryId:s.suite.deliveries.at(-1).id},pm);}
 function invoice(s,qty='10',rate='700',ref='INV001'){const o=s.suite.orders[0];return run(s,'invoice.submit',{orderId:o.id,lineId:o.lines[0].id,quantity:qty,rate,reference:ref,evidenceFileId:'invoice'});}

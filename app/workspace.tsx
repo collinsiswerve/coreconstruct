@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { LayoutDashboard, UsersRound, ClipboardList, CreditCard, Wallet, ReceiptText, BarChart3, Settings2, Plus, ChevronDown, ChevronRight, ArrowUpRight, ArrowDownLeft, Check, CheckCircle2, Clock3, MapPin, HardHat, Building2, X, Download, Printer, AlertCircle, CalendarDays, Menu, Search, FileText, ShieldCheck, LogOut, CircleHelp, ArrowRight, Sparkles, ExternalLink, LoaderCircle } from 'lucide-react';
 import { addDays, buildWageEntries, dateKey, displayDate, emptyState, kes, monday, paidFor, totals, validDate, workerOnProject, type Command, type Expense, type State, type Wagebill } from '../lib/domain';
 import { makeCsv } from '../lib/export';
+import { displayTheme } from '../lib/appearance';
+import { CostOverview, FieldWork, ProgressCard, ProjectPosition } from './site-dashboard';
 import { brandForeground, compactKes, fullDate } from '../lib/display';
 import { Badge, Empty, Status } from './ui';
 import { AccountSignOut } from './account-sign-out';
@@ -24,13 +26,13 @@ import { OperationsTotals } from './operations-review';
 import { Modal, type Dialog } from './workspace-modal';
 import { SuitePanels, type SuiteView } from './suite-panels';
 import { normalizeState, enabled, projectFinancials } from '../lib/suite';
-import type { Actor, Module, SuiteState } from '../lib/suite-types';
+import type { ActionItem, Actor, Module, SuiteState } from '../lib/suite-types';
 import { enqueue, pending, removePending, isQueueable, saveReference, readReference, fieldHeaders, FieldRequestError, requireFieldResponse, uploadAttachments, syncPendingDrafts, type PendingCommand, type UploadAttachment } from '../lib/offline';
 type WorkspaceResponse = { state: SuiteState; version: number; actor: Actor; organizations?: {id:string;name:string;role:string}[]; user?: { name: string; email: string }; error?: string;operationApplied?:boolean };
-type View = 'billing' | 'onboarding' | 'portfolio' | 'finance' | 'overview' | 'attendance' | 'wagebills' | 'expenses' | 'reports' | 'people' | 'settings' | SuiteView;
-const nav = [{ id: 'overview', label: 'Overview', icon: LayoutDashboard }, { id: 'finance', label: 'Project finance', icon: Wallet }, { id: 'site', label: 'Site & brief', icon: MapPin }, { id: 'design', label: 'Drawings & evidence', icon: FileText }, { id: 'boq', label: 'BOQ & allowances', icon: ClipboardList }, { id: 'attendance', label: 'Attendance', icon: UsersRound }, { id: 'wagebills', label: 'Wagebills', icon: Wallet }, { id: 'expenses', label: 'Expenses', icon: ReceiptText }, { id: 'materials', label: 'Materials & store', icon: Building2 }, { id: 'variations', label: 'Variations', icon: FileText }, { id: 'reports', label: 'Weekly report', icon: BarChart3 }, { id: 'client-portal', label: 'Client trust portal', icon: ShieldCheck }] as const;
+type View = 'rfis' | 'tasks' | 'billing' | 'onboarding' | 'portfolio' | 'finance' | 'overview' | 'attendance' | 'wagebills' | 'expenses' | 'reports' | 'people' | 'settings' | SuiteView;
+const nav = [{ id: 'overview', label: 'Overview', icon: LayoutDashboard }, { id: 'rfis', label: 'RFIs', icon: CircleHelp }, { id: 'tasks', label: 'Tasks', icon: ClipboardList }, { id: 'finance', label: 'Project finance', icon: Wallet }, { id: 'site', label: 'Site & brief', icon: MapPin }, { id: 'design', label: 'Drawings & evidence', icon: FileText }, { id: 'boq', label: 'BOQ & allowances', icon: ClipboardList }, { id: 'attendance', label: 'Attendance', icon: UsersRound }, { id: 'wagebills', label: 'Wagebills', icon: Wallet }, { id: 'expenses', label: 'Expenses', icon: ReceiptText }, { id: 'materials', label: 'Materials & store', icon: Building2 }, { id: 'variations', label: 'Variations', icon: FileText }, { id: 'reports', label: 'Weekly report', icon: BarChart3 }, { id: 'client-portal', label: 'Client trust portal', icon: ShieldCheck }] as const;
 function download(name: string, body: string, type: string) { const url = URL.createObjectURL(new Blob([body], { type })); const a = document.createElement('a'); a.href = url; a.download = name; a.click(); URL.revokeObjectURL(url); }
-const views: readonly View[] = ['overview', 'portfolio', 'finance', 'site', 'design', 'boq', 'attendance',
+const views: readonly View[] = ['rfis', 'tasks', 'overview', 'portfolio', 'finance', 'site', 'design', 'boq', 'attendance',
   'wagebills', 'expenses', 'materials', 'variations', 'reports', 'client-portal', 'pilot', 'onboarding',
   'team', 'people', 'billing', 'settings', 'configuration'];
 
@@ -78,7 +80,10 @@ export default function Workspace() {
   const updateWeek = state.reports.find(note => note.id === clientUpdatesSampleId + ':report')?.weekStart;
   const sampleWeek = operationsSample && addDays(monday(dateKey(new Date(operationsSample.createdAt))), -7);
   const viewModule:Partial<Record<View,Module>>={design:'design',boq:'boq',attendance:'wages',wagebills:'wages',people:'wages',materials:'materials',variations:'variations','client-portal':'portal',reports:'portal'};
-  function visible(v:View){if(v==='billing')return canBilling;if(demo?.billing)return false;if(v==='onboarding'||v==='team')return !!canSetup;if(v==='settings'||v==='configuration')return actor?.role==='admin';if(v==='portfolio')return !!portfolio&&['admin','pm'].includes(role);if(v==='finance')return canViewProjectFinance(role);if(role==='finance'||role==='accounts')return v==='overview';const mod=viewModule[v];if(mod&&!(selected?enabled(state,selected,mod):state.suite.modules[mod]))return false;if(role==='client')return v==='overview';if(role==='architect')return ['overview','site','design','pilot'].includes(v);if(role==='foreman')return !['boq','variations','client-portal','settings','team'].includes(v);return true;}
+  function visible(v:View){if(v==='billing')return canBilling;if(demo?.billing)return false;if(v==='onboarding'||v==='team')return !!canSetup;if(v==='settings'||v==='configuration')return actor?.role==='admin';if(v==='portfolio')return !!portfolio&&['admin','pm'].includes(role);if(v==='finance')return canViewProjectFinance(role);if(role==='finance'||role==='accounts')return v==='overview';const mod=viewModule[v];if(mod&&!(selected?enabled(state,selected,mod):state.suite.modules[mod]))return false;if(role==='client')return v==='overview';if(role==='architect')return ['overview','site','design','rfis','tasks','pilot'].includes(v);if(role==='foreman')return !['boq','variations','client-portal','settings','team'].includes(v);return true;}
+  const canReadCosts = ['admin', 'pm', 'finance'].includes(role) && online;
+  const canField = ['admin', 'pm', 'foreman', 'architect'].includes(role);
+  const projectActions = state.suite.actions.filter(item => item.projectId === selected);
   const financials=project?projectFinancials(state,selected):null;
   const summary = totals(state, selected), workers = state.workers.filter(w => project ? workerOnProject(w, project) : !w.demo), activeWorkers = workers.filter(w => w.active);
   const attendance = state.attendance.filter(a => a.projectId === selected && a.date >= week && a.date <= end);
@@ -201,7 +206,7 @@ export default function Workspace() {
   }, []);
   useEffect(()=>{const up=()=>{setOnline(true);void refresh();},down=()=>setOnline(!!demo);window.addEventListener('online',up);window.addEventListener('offline',down);if(!demo && 'serviceWorker'in navigator)void navigator.serviceWorker.register('/sw.js').catch(()=>{});return()=>{window.removeEventListener('online',up);window.removeEventListener('offline',down);};},[]);
   useEffect(() => {
-    document.documentElement.dataset.theme = state.suite.brand.theme;
+    document.documentElement.dataset.theme = displayTheme(state.suite.brand.theme);
     document.documentElement.style.setProperty('--brand-primary', state.suite.brand.primary);
     document.documentElement.style.setProperty('--brand-foreground', brandForeground(state.suite.brand.primary));
   }, [state.suite.brand.primary, state.suite.brand.theme]);
@@ -347,10 +352,13 @@ export default function Workspace() {
   }
   const requireProject = <Empty title="Start with one project" text="Create a project to record attendance, review costs and prepare your weekly report." action={<button className="btn primary" onClick={() => open('project')}><Plus size={16} />Create project</button>} />;
   function payButton(type: 'wagebill' | 'expense', item: Wagebill | Expense) { const total = type === 'wagebill' ? (item as Wagebill).payableCents : (item as Expense).amountCents, balance = total - paidFor(state, type, item.id); return !canFinance||item.status !== 'approved' ? null : balance > 0 ? <button className="btn small" onClick={() => open('payment', { targetType: type, targetId: item.id, balance })}>Record payment</button> : <Badge tone="green"><Check size={12} />Settled</Badge>; }
-  const title = { billing: 'Subscription billing', onboarding: 'Workspace setup', portfolio: 'Project portfolio', finance: 'Project finance', overview: 'Project overview', attendance: 'Daily attendance', wagebills: 'Weekly wagebills', expenses: 'Site expenses', reports: 'Weekly report', people: 'Your site team', settings: 'Workspace settings',site:'Site & client brief',design:'Drawings & site evidence',boq:'BOQ & allowances',materials:'Materials & site store',variations:'Variations & decisions','client-portal':'Client trust portal',team:'Team & project access',pilot:'Pilot results',configuration:'Firm configuration' }[view];
-  const desc = { billing: 'Rehearse the firm’s CoreConstruct subscription, from first invoice to renewal.', onboarding: 'Set up your firm and take the first project through a weekly close.', portfolio: 'Ten fictional projects started from 2022 to 2026. Review project records and open each client page.', finance: 'Project costs, client billing and tracked cash.', overview: '', attendance: '', wagebills: '', expenses: '', reports: '', people: 'Keep agreed rates and trade details in one place.', settings: 'Manage your firm, project details and data.',site:'The plot, agreed brief and open project actions.',design:'Issue the right revision. Publish reviewed evidence.',boq:'Connect the BOQ to actual resource costs.',materials:'Order, receive, match and issue with a traceable history.',variations:'The exact scope, price and time effect for every decision.','client-portal':'A published view that respects your contract model.',team:'Give each person the access their project needs.',pilot:'Review weekly closes and compare pilot measurements with your existing process.',configuration:'Firm branding and modules.' }[view];
-  const financeReview = role === 'admin' ? state.suite.finance.reviews[selected] : undefined;
+  const title = { rfis: 'RFIs', tasks: 'Project tasks', billing: 'Subscription billing', onboarding: 'Workspace setup', portfolio: 'Project portfolio', finance: 'Project finance', overview: 'Project overview', attendance: 'Daily attendance', wagebills: 'Weekly wagebills', expenses: 'Site expenses', reports: 'Weekly report', people: 'Your site team', settings: 'Workspace settings',site:'Site & client brief',design:'Drawings & site evidence',boq:'BOQ & allowances',materials:'Materials & site store',variations:'Variations & decisions','client-portal':'Client trust portal',team:'Team & project access',pilot:'Pilot results',configuration:'Firm configuration' }[view];
+  const desc = { rfis: 'Questions, responsible people and due dates.', tasks: 'Open actions, instructions and snagging.', billing: 'Rehearse the firm’s CoreConstruct subscription, from first invoice to renewal.', onboarding: 'Set up your firm and take the first project through a weekly close.', portfolio: 'Ten fictional projects started from 2022 to 2026. Review project records and open each client page.', finance: 'Project costs, client billing and tracked cash.', overview: '', attendance: '', wagebills: '', expenses: '', reports: '', people: 'Keep agreed rates and trade details in one place.', settings: 'Manage your firm, project details and data.',site:'The plot, agreed brief and open project actions.',design:'Issue the right revision. Publish reviewed evidence.',boq:'Connect the BOQ to actual resource costs.',materials:'Order, receive, match and issue with a traceable history.',variations:'The exact scope, price and time effect for every decision.','client-portal':'A published view that respects your contract model.',team:'Give each person the access their project needs.',pilot:'Review weekly closes and compare pilot measurements with your existing process.',configuration:'Firm branding and modules.' }[view];
+  const financeReview = canViewProfit(role) ? state.suite.finance.reviews[selected] : undefined;
   const forecast = financeReview ? reviewFigures(financeReview).forecastProfit : null;
+  function openAction(item: ActionItem) {
+    open('action-details', { actionId: item.id, canClose: office || role === 'architect' || item.owner.toLowerCase() === actor?.email.toLowerCase() || item.owner === actor?.name });
+  }
   const firmLabel = demo ? state.firm.split(' · ')[0] : state.firm;
   const hasContext = !loading && view !== 'billing' && view !== 'portfolio' && view !== 'configuration' && (view !== 'onboarding' || !!project);
   const pendingReview = pendingBills.length + pendingExpenses.length;
@@ -432,7 +440,7 @@ export default function Workspace() {
         </div>
       </header>
       <main id="workspace-main" tabIndex={-1}>
-        <header className="workspace-header">
+        <header className="workspace-header" data-overview={view === 'overview'} data-mobile-entry={!!project && canField}>
           {hasContext && <div className="project-bar">
             <div className="project-selection">
               <span className="project-icon" aria-hidden="true"><Building2 size={20} /></span>
@@ -445,19 +453,19 @@ export default function Workspace() {
             </div>
             {view !== 'finance' && <div className="week-picker" aria-label="Reporting week">
               <button className="icon-button" onClick={() => setWeek(addDays(week, -7))} aria-label="Previous week"><ChevronRight className="flip" size={18} /></button>
-              <span title={fullDate(week) + ' – ' + fullDate(end)}><CalendarDays size={16} aria-hidden="true" />{displayDate(week)} – {displayDate(end)}</span>
+              <label className="ultra-week-control" title={fullDate(week) + ' – ' + fullDate(end)}><CalendarDays size={18} aria-hidden="true" /><span className="ultra-week-long">{fullDate(week)} – {displayDate(end)}</span><span className="ultra-week-short">{displayDate(week)} – {displayDate(end)}</span><input type="date" aria-label="Choose reporting week" value={week} onChange={event => { if (event.target.value) setWeek(monday(validDate(event.target.value))); }} /></label>
               <button className="icon-button" onClick={() => setWeek(addDays(week, 7))} aria-label="Next week"><ChevronRight size={18} /></button>
               <button className="text-button" onClick={() => setWeek(monday())}>This week</button>
             </div>}
           </div>}
           <div className="page-heading">
-            <div><h1>{title}</h1>{desc && <p>{desc}</p>}</div>
+            <div><h1>{view === 'overview' && project ? project.name : title}</h1>{desc && <p>{desc}</p>}</div>
             <div className="heading-actions">
               {canSetup && setupReturn && view !== 'onboarding' && <button className="btn" onClick={() => go('onboarding')}>Back to workspace setup</button>}
               {view === 'overview' && office && visible('reports') && <button className="btn" onClick={() => go('reports')}><FileText size={16} />View report</button>}
               {view === 'configuration' && <button className="btn" onClick={() => go('settings')}>Back to settings</button>}
-              {!loading && !['billing', 'onboarding', 'portfolio', 'finance', 'settings', 'team', 'configuration'].includes(view) && (office || ['attendance', 'expenses', 'people'].includes(view))
-                && <button className="btn primary" onClick={() => open(!project ? 'project' : view === 'attendance' ? 'attendance' : view === 'expenses' ? 'expense' : view === 'people' ? 'worker' : 'quick')}>
+              {!loading && !['billing', 'onboarding', 'portfolio', 'finance', 'settings', 'team', 'configuration'].includes(view) && (office || canField && ['overview', 'rfis', 'tasks', 'site', 'design', 'attendance', 'expenses', 'people'].includes(view))
+                && <button className="btn primary" onClick={() => open(!project ? 'project' : view === 'attendance' ? 'attendance' : view === 'expenses' ? 'expense' : view === 'people' ? 'worker' : view === 'rfis' ? 'rfi' : view === 'tasks' ? 'action-create' : 'quick')}>
                   <Plus size={17} />{!project ? 'Create project' : view === 'attendance' ? 'Record attendance' : view === 'expenses' ? 'Add expense' : view === 'people' ? 'Add worker' : 'New entry'}
                 </button>}
             </div>
@@ -537,23 +545,35 @@ export default function Workspace() {
       openSample={() => openOperationsSample('pilot')} navigate={go} />}
     {actor&&['site','design','boq','materials','variations','client-portal','team','pilot','configuration'].includes(view)&&<SuitePanels view={view as SuiteView} state={state} actor={actor} project={project} week={week} saving={saving} command={command} refresh={refresh} error={error}/>}
     {view==='overview'&&role==='client'&&<section className="panel"><div className="panel-heading"><h2>Your assigned projects</h2></div>{state.projects.map(p=><div className="portal-file" key={p.id}><Building2 size={20}/><div><strong>{p.name}</strong><small>{p.location}</small></div><a className="btn primary" href={href('/client/'+p.id+'?org='+encodeURIComponent(actor?.organizationId||''))}>Open client view</a></div>)}</section>}
-    {view==='overview'&&!canFinance&&role!=='client'&&role!=='finance'&&role!=='accounts'&&<section className="panel"><div className="panel-heading"><div><h2>Your project workspace</h2><p>{online?'Assigned records and actions for your role.':'Offline reference view; save supported site entries as drafts.'}</p></div></div><div className="role-dashboard">{['site','design','attendance','materials','reports'].filter(v=>visible(v as View)).map(v=><button className="btn" key={v} onClick={()=>go(v as View)}>{nav.find(n=>n.id===v)?.label||v}<ArrowRight size={14}/></button>)}</div></section>}
-    {view === 'overview' && canFinance && <>
+    {view==='overview'&&!project&&!canReadCosts&&role!=='client'&&role!=='finance'&&role!=='accounts'&&<section className="panel"><div className="panel-heading"><div><h2>Your project workspace</h2><p>{online?'Assigned records and actions for your role.':'Offline reference view; save supported site entries as drafts.'}</p></div></div><div className="role-dashboard">{['site','design','attendance','materials','reports'].filter(v=>visible(v as View)).map(v=><button className="btn" key={v} onClick={()=>go(v as View)}>{nav.find(n=>n.id===v)?.label||v}<ArrowRight size={14}/></button>)}</div></section>}
+    {view === 'overview' && canReadCosts && <>
       {!project && <div className="welcome-banner"><div><Badge tone="green">LET’S GET YOUR FIRST SITE IN SYNC</Badge><h2>A clearer week starts here.</h2><p>Add one project, bring in your team and turn site records into a dependable weekly close.</p><div className="welcome-actions"><button className="btn primary" onClick={() => open('project')}>Set up first project <ArrowRight size={16} /></button><button className="text-button" disabled={saving} onClick={() => void loadSampleProjects()}>Explore sample projects <ArrowUpRight size={14} /></button></div></div><div className="welcome-visual" aria-hidden="true"><div className="building-line b1" /><div className="building-line b2" /><div className="building-line b3" /><span className="floating-check"><CheckCircle2 size={23} /></span><span className="visual-label">ONE PROJECT. ONE CLEAR PICTURE.</span></div></div>}
-      {project && visible('finance') && <section className="project-forecast" data-loss={forecast !== null && forecast < 0}>
-        <span className="forecast-icon">{forecast !== null && forecast < 0 ? <AlertCircle size={22} aria-hidden="true" /> : <BarChart3 size={22} aria-hidden="true" />}</span>
-        <div>
-          <h2>{forecast === null ? 'Project finance' : 'Forecast at completion'}</h2>
-          {forecast === null
-            ? <p>{role === 'admin' ? 'Record a finance review to calculate the forecast.' : 'Review the budget and approved costs.'}</p>
-            : <p><strong title={kes(forecast)}>{compactKes(forecast)}</strong><span>{forecast < 0 ? 'Forecast loss' : forecast > 0 ? 'Forecast profit' : 'Break-even forecast'}</span></p>}
-        </div>
+      {project && <ProjectPosition state={state} project={project} role={role} openFinance={() => go('finance')} />}
+      {project && forecast !== null && <section className="project-forecast" data-loss={forecast < 0}>
+        <span className="forecast-icon">{forecast < 0 ? <AlertCircle size={22} aria-hidden="true" /> : <BarChart3 size={22} aria-hidden="true" />}</span>
+        <div><h2>{forecast < 0 ? 'Forecast loss' : forecast > 0 ? 'Forecast profit' : 'Break-even forecast'}</h2>
+          <p><strong title={kes(forecast)}>{compactKes(forecast)}</strong><span>Finance review at {fullDate(financeReview!.asOf)}</span></p></div>
         <button className="btn" onClick={() => go('finance')}>Open Project finance <ArrowRight size={16} /></button>
       </section>}
-      <section className="metrics" aria-label="Project position"><Metric label="Approved costs" value={compactKes(summary.incurred)} exactValue={kes(summary.incurred)} icon={Wallet} note={financials?.allowance ? `${Math.round(summary.incurred / financials.allowance * 100)}% of internal allowance` : 'Your approved site costs'} color="teal" /><Metric label="Confirmed payments out" value={compactKes(summary.cashPaid)} exactValue={kes(summary.cashPaid)} icon={ArrowUpRight} note="Payments and worker advances" color="blue" /><Metric label="Balance to pay" value={compactKes(summary.outstanding)} exactValue={kes(summary.outstanding)} icon={Clock3} note="On approved costs only" color="amber" /><Metric label="Site progress" value={`${project?.progress || 0}%`} icon={HardHat} note={project?.stage || 'Ready when you are'} color="sage" /></section>
-      <div className="dashboard-grid"><section className="panel"><div className="panel-heading"><div><h2>Cost overview</h2><p>Approved costs by work week</p></div><Badge>Last 6 weeks</Badge></div><CostChart state={state} projectId={selected} week={week} /><div className="chart-legend"><span><i />Approved costs</span><strong>Internal allowance <b>{kes(financials?.allowance || 0)}</b></strong></div></section><section className="panel review-panel"><div className="panel-heading"><div><h2>Needs your review</h2><p>Open submissions</p></div><span className="count-circle">{pendingReview}</span></div>{!pendingReview ? <div className="review-clear"><span><CheckCircle2 size={31} /></span><h3>You’re all caught up</h3><p>Submitted wagebills and expenses<br />will appear here for review.</p></div> : <div className="review-list">{pendingBills.slice(0, 2).map(b => <button key={b.id} onClick={() => open('bill-details', { billId: b.id })}><span className="item-icon teal"><ClipboardList size={17} /></span><span><strong>Weekly wagebill</strong><small>{displayDate(b.weekStart)} – {displayDate(b.weekEnd)}</small></span><b>{kes(b.payableCents)}</b><ChevronRight size={15} /></button>)}{pendingExpenses.slice(0, 3).map(e => <button key={e.id} onClick={() => open('expense-details', { expenseId: e.id })}><span className="item-icon amber"><ReceiptText size={17} /></span><span><strong>{e.description}</strong><small>{e.category}</small></span><b>{kes(e.amountCents)}</b><ChevronRight size={15} /></button>)}</div>}{pendingReview > 0 && <button className="panel-footer-button" onClick={() => go(pendingBills.length ? 'wagebills' : 'expenses')}>Review submissions <ArrowRight size={15} /></button>}</section></div>
+      {project && <div className="dashboard-grid ultra-dashboard-grid">
+        <CostOverview key={selected + ':' + week} state={state} projectId={selected} week={week} />
+        {canField && <div className="ultra-work-stack"><FieldWork actions={projectActions} kind="rfi" openItem={openAction} viewAll={() => go('rfis')} add={() => open('rfi')} />
+          <FieldWork actions={projectActions} kind="task" openItem={openAction} viewAll={() => go('tasks')} add={() => open('action-create')} /></div>}
+      </div>}
       <div className="dashboard-grid lower-grid"><section className="panel"><div className="panel-heading"><div><h2>This week on site</h2><p>{displayDate(week)} – {displayDate(end)}</p></div><button className="text-button" onClick={() => go('attendance')}>View attendance <ArrowUpRight size={14} /></button></div><div className="site-stats"><div><strong>{new Set(attendance.map(a => a.workerId)).size}<span>workers</span></strong><small>Recorded this week</small></div><div><strong>{attendance.reduce((n, a) => n + a.units / 2, 0)}<span>days</span></strong><small>Total person-days</small></div><div><strong>{kes(weekRows.reduce((n, a) => n + a.grossCents, 0))}</strong><small>Value before advances</small></div></div><div className="weekday-bars">{Array.from({ length: 7 }, (_, d) => { const day = addDays(week, d), total = state.attendance.filter(a => a.projectId === selected && a.date === day).reduce((n, a) => n + a.units / 2, 0); return <div key={day}><div><i style={{ height: `${total ? Math.max(10, total / Math.max(activeWorkers.length, 1) * 100) : 3}%` }} /></div><span>{['M', 'T', 'W', 'T', 'F', 'S', 'S'][d]}</span><small>{total || '—'}</small></div>; })}</div></section><section className="panel"><div className="panel-heading"><div><h2>Recent activity</h2><p>Your workspace history</p></div><Clock3 size={18} className="muted" /></div>{audit.length ? <div className="activity-list">{audit.slice(0, 4).map(a => <div key={a.id}><span className="activity-dot" /><div><strong>{a.description}</strong><small>{a.actor} · {displayDate(a.at)}</small></div></div>)}</div> : <div className="activity-placeholder"><FileText size={25} /><p>Your first entry starts the story.<br />Changes and decisions will appear here.</p></div>}</section></div>
     </>}
+    {view === 'overview' && project && canField && !canReadCosts && <div className="ultra-field-dashboard">
+      <ProgressCard project={project} />
+      <FieldWork actions={projectActions} kind="rfi" openItem={openAction} viewAll={() => go('rfis')} add={() => open('rfi')} />
+      <FieldWork actions={projectActions} kind="task" openItem={openAction} viewAll={() => go('tasks')} add={() => open('action-create')} />
+    </div>}
+    {view === 'overview' && office && pendingReview > 0 && <section className="panel ultra-review-summary">
+      <div><h2>Needs your review</h2><p>{pendingBills.length} wagebills · {pendingExpenses.length} expenses</p></div>
+      <button className="btn" onClick={() => go(pendingBills.length ? 'wagebills' : 'expenses')}>Review submissions <ArrowRight size={17} /></button>
+    </section>}
+    {(view === 'rfis' || view === 'tasks') && canField && (project ? <FieldWork key={view + selected}
+      actions={projectActions} kind={view === 'rfis' ? 'rfi' : 'task'} full openItem={openAction}
+      add={() => open(view === 'rfis' ? 'rfi' : 'action-create')} /> : requireProject)}
     {portfolio && project && view === 'overview' && <section className="panel portfolio-project-links">
       <div><h2>Project records</h2></div>
       <div className="row-actions"><button className="btn" onClick={() => go('design')}>Drawings &amp; renders</button>
@@ -599,49 +619,16 @@ export default function Workspace() {
           : <button className="text-button" onClick={() => open('project')}>Create your own project <ArrowRight size={14} /></button>
       )}
     </footer>
-  </>}</main></div>{toast && <div className="toast" role="status"><CheckCircle2 size={18} />{toast}</div>}{dialog && <Modal organizationId={actor?.organizationId} canApprove={canFinance} dialog={dialog} state={state} project={project} workers={activeWorkers} week={week} saving={saving} error={error} close={() => { if (!inflight.current) setDialog(null); }} command={command} open={open} />}</div>;
-}
-function Metric({ label, value, exactValue, icon: Icon, note, color }: { label: string; value: string; exactValue?: string; icon: typeof Wallet; note: string; color: string }) { return <div className="metric"><div><span>{label}</span><span className={'metric-icon ' + color}><Icon size={17} /></span></div><strong title={exactValue}>{value}</strong><p>{note}</p></div>; }
-function CostChart({ state, projectId, week }: { state: State; projectId: string; week: string }) {
-  const points = Array.from({ length: 6 }, (_, index) => {
-    const start = addDays(week, (index - 5) * 7);
-    const end = addDays(start, 6);
-    const expenses = state.expenses.filter(item => item.projectId === projectId && item.status === 'approved'
-      && !item.opening && item.date >= start && item.date <= end).reduce((sum, item) => sum + item.amountCents, 0);
-    const wages = state.wagebills.filter(item => item.projectId === projectId && item.status === 'approved'
-      && item.weekStart === start).reduce((sum, item) => sum + item.grossCents, 0);
-    return { start, value: expenses + wages };
-  });
-  const roughStep = Math.max(100_000, ...points.map(point => point.value)) / 4;
-  const magnitude = 10 ** Math.floor(Math.log10(roughStep));
-  const interval = ([1, 2, 2.5, 5, 10].find(step => step * magnitude >= roughStep) || 10) * magnitude;
-  const top = interval * 4;
-  const inMillions = top >= 100_000_000;
-  const unit = inMillions ? 100_000_000 : 100_000;
-  const x = (index: number) => 63 + index * 93;
-  const y = (value: number) => 172 - value / top * 140;
-  const coordinates = points.map((point, index) => x(index) + ',' + y(point.value)).join(' ');
-  const axisLabels = new Intl.NumberFormat('en-KE', { maximumFractionDigits: 2 });
-
-  return <figure className="cost-chart" aria-label="Approved costs by week">
-    <figcaption>KSh {inMillions ? 'millions' : 'thousands'}</figcaption>
-    <svg viewBox="0 0 560 209" aria-hidden="true">
-      {Array.from({ length: 5 }, (_, index) => {
-        const value = top - index * interval;
-        return <g key={index}>
-          <line x1="63" x2="535" y1={y(value)} y2={y(value)} stroke="var(--line)" />
-          <text x="52" y={y(value) + 4} textAnchor="end">{axisLabels.format(value / unit)}</text>
-        </g>;
-      })}
-      <polygon points={`63,172 ${coordinates} 528,172`} fill="var(--green-bg)" />
-      <polyline points={coordinates} fill="none" stroke="var(--teal)" strokeWidth="2.5" strokeLinejoin="round" />
-      {points.map((point, index) => <g key={point.start}>
-        <circle cx={x(index)} cy={y(point.value)} r="4" fill="var(--teal)" stroke="var(--surface)" strokeWidth="2">
-          <title>{displayDate(point.start)} · {kes(point.value)}</title>
-        </circle>
-        <text x={x(index)} y="201" textAnchor="middle">{displayDate(point.start)}</text>
-      </g>)}
-    </svg>
-    <ul className="sr-only">{points.map(point => <li key={point.start}>{fullDate(point.start)} · {kes(point.value)}</li>)}</ul>
-  </figure>;
+  </>}</main></div>
+  {actor && !loading && <div className="ultra-mobile-dock">
+    {project && canField && !['settings', 'configuration', 'onboarding', 'billing', 'team'].includes(view) && <button className="btn primary ultra-mobile-entry" onClick={() => open('quick')}><Plus size={22} aria-hidden="true" />New entry</button>}
+    <nav aria-label="Mobile navigation">
+      <button aria-current={view === 'overview' ? 'page' : undefined} onClick={() => go('overview')}><LayoutDashboard size={21} aria-hidden="true" /><span>Overview</span></button>
+      {visible('attendance') ? <button aria-current={view === 'attendance' ? 'page' : undefined} onClick={() => go('attendance')}><ClipboardList size={21} aria-hidden="true" /><span>Field log</span></button>
+        : visible('finance') ? <button aria-current={view === 'finance' ? 'page' : undefined} onClick={() => go('finance')}><Wallet size={21} aria-hidden="true" /><span>Finance</span></button>
+          : <button aria-current={view === 'design' ? 'page' : undefined} onClick={() => go('design')}><FileText size={21} aria-hidden="true" /><span>Drawings</span></button>}
+      {visible('tasks') && <button aria-current={view === 'tasks' ? 'page' : undefined} onClick={() => go('tasks')}><CheckCircle2 size={21} aria-hidden="true" /><span>Tasks</span></button>}
+      <button aria-expanded={menu} aria-controls="workspace-navigation" onClick={() => setMenu(!menu)}><Menu size={21} aria-hidden="true" /><span>More</span></button>
+    </nav>
+  </div>}{toast && <div className="toast" role="status"><CheckCircle2 size={18} />{toast}</div>}{dialog && <Modal organizationId={actor?.organizationId} canApprove={canFinance} dialog={dialog} role={role} actorName={actor?.name || user.name} state={state} project={project} workers={activeWorkers} week={week} saving={saving} error={error} close={() => { if (!inflight.current) setDialog(null); }} command={command} open={open} />}</div>;
 }

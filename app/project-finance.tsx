@@ -271,7 +271,7 @@ export function ProjectFinance({ state, project, role, organizationId, saving, e
     <section className="finance-cards" aria-label="Project finance summary">
       {allowProfit ? <>
         <Card title="Profit / loss to date" amount={figures?.profitToDate ?? null} detail={profitDetail} signed icon={<BarChart3 size={16} />} />
-        <Card title="Forecast at completion" amount={figures?.forecastProfit ?? null} detail={forecastDetail} signed icon={<ArrowUpRight size={16} />} />
+        <Card title="Forecast profit / loss" amount={figures?.forecastProfit ?? null} detail={forecastDetail} signed icon={<ArrowUpRight size={16} />} />
       </> : role === 'pm' ? <>
         <Card title="Internal allowance" amount={projectFinancials(state, projectId).allowance} detail="Includes accepted cost variations" icon={<Wallet size={16} />} />
         <Card title="Approved costs" amount={projectTotals.incurred} detail={project.opening ? 'Includes opening incurred costs' : 'Approved wagebills and expenses'} icon={<BarChart3 size={16} />} />

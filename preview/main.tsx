@@ -11,6 +11,7 @@ import { isPortfolioProject, portfolioProject } from './portfolio-state';
 import '../app/globals.css';
 import './preview.css';
 import '../app/workspace-design.css';
+import '../app/site-ultra.css';
 
 function PdfDownload({ path, title, filename }: { path: string; title: string; filename: string }) {
   const { request } = useWorkspaceRuntime();
