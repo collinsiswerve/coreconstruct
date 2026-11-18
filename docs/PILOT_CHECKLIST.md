@@ -8,7 +8,48 @@ Use one test project first. Keep the firm's existing records alongside the pilot
 2. Create a project with a KES 100,000 internal allowance and KES 150,000 fixed contract. Enter the test client name, location and start/completion dates.
 3. In Settings, try the three themes, brand colour, logo and firm details. Apply a firm preset, confirm disabled screens disappear, then restore Full design-build. Existing data must remain.
 4. In Site & brief, enter the plot pin, geofence, LR/county, brief and client settings. A GPS exception must remain visible for office review.
-5. Import `public/templates/boq-import.csv`: copy its contents into BOQ & allowances → Import BOQ. A repeated code must be rejected rather than overwrite the baseline.
+5. In **BOQ & allowances**, download the Excel template and choose **Import Excel BOQ**. Select the worksheet, heading row and last item row, then confirm the column mapping. The four sample items should preview KSh 929,637.50 at client rates, KSh 720,000 in internal allowances and KSh 154,000 in labour allowances. Check these against the workbook before confirming. Importing it again should flag all four duplicate codes. The existing CSV template remains available under **Paste CSV**.
+6. On a fictional project without overlapping transactions, have the principal open **Opening balances**. Use the same cutoff and a source reference for the budget and ledger. Enter KSh 720,000 budget, KSh 500,000 billed, KSh 300,000 received, KSh 250,000 incurred and KSh 175,000 paid. The preview should show KSh 200,000 client balance due, KSh 75,000 unpaid costs and KSh 125,000 tracked cash. After saving, apply a later receipt to the opening client balance and record a payment against **Opening unpaid costs** in **Expenses**. The balances should fall without adding the historical cost twice.
+7. Verify that the assigned PM/QS can import the BOQ for their project. Check that Accounts can post and apply receipts without seeing the internal opening budget, and the assigned client sees their billing and receipt figures. Check that users assigned elsewhere cannot view or update the project. Use the private pilot for the signed-in walkthrough.
+
+## Labour and procurement walkthrough
+
+As the principal, open **Wagebills** or **Materials & store** and select **Open sample walkthrough**. The sample opens on the week already containing attendance. The supplied delivery note and invoice are fictional.
+
+1. Select **Prepare wagebill**. Check one full day and one half day at KSh 1,000 per day. Preview KSh 1,500 gross, a KSh 300 advance deduction and KSh 1,200 net. Submit and approve the bill, then record the fictional KSh 1,200 payment.
+2. In **Materials & store → Invoices**, review the three-way match for INV-DEMO-M3-001. The order is for ten bags at KSh 700 per bag. Approval is blocked until the delivery is approved.
+3. In **Deliveries**, check DN-DEMO-M3-001 and approve six bags. In **Invoices**, verify that four bags at KSh 700 match and approve KSh 2,800. Open purchase commitments should fall from KSh 7,000 to KSh 4,200.
+4. In the invoice register, record a fictional KSh 1,000 payment. Check KSh 1,800 due. In **Overview**, reconcile KSh 4,300 in approved costs, KSh 2,500 in confirmed cash paid and KSh 1,800 in outstanding approved costs. Confirm the stock is six bags.
+5. Check the same workflow with separate signed-in roles in the private pilot. The owner can use the reasoned principal override on their own submissions for the sample.
+
+## M5 weekly close
+
+1. Open [Pilot results on GitHub Pages](https://collinsiswerve.github.io/coreconstruct/?view=pilot&v=10) and select **Open sample weekly close**. The checklist uses the selected reporting week. Open procurement submissions and balances show the current project position.
+2. Complete the wagebill, delivery and invoice steps above. Save and publish a note for the same week under **Weekly report**. Return to **Pilot results** and check that the wagebill is approved, the client update is published and the pending procurement queue is clear.
+3. Reconcile KSh 4,300 approved costs, KSh 2,500 confirmed cash out and KSh 1,800 still due. The approved purchase order has KSh 4,200 remaining commitment. KSh 300 of the confirmed cash was the original worker advance.
+4. For a fictional payment correction, reverse the KSh 1,000 supplier payment from its expense detail and record it with a corrected reference. The balance due should move to KSh 2,800 then back to KSh 1,800. Any funding linked to the reversed payment becomes available to allocate again. Link the corrected payment and check the original reversal in the decision history.
+5. On the private pilot, assign distinct test accounts and check project access before and after membership removal. On the intended phone, interrupt a queued delivery with a photo and delivery note, restart the browser, and select **Sync drafts** after reconnecting. Confirm one delivery and one copy of each attachment. On another device, update a queued attendance row and check **Needs review** on the first device.
+
+The release checks use fictional data, separate test identities and isolated storage. The actual Archi-Hub accounts, browser sessions and phones are acceptance steps for the controlled pilot.
+
+## Recovery drill
+
+1. As principal in the private workspace, choose **Settings → Workspace backup → Download recovery ZIP**. The archive contains the firm’s business records and original uploaded attachments with SHA-256 checksums. It supports up to 240 files and 24 MiB of combined records and attachment bytes. Keep it in private storage.
+2. From the repository root after `pnpm run build`, run the command below with a new directory and the intended recovery owner’s account details. The restore uses local D1 and R2 storage. Replace the sample values with the recovery operator’s values.
+
+   ```sh
+   pnpm run recover -- /path/to/coreconstruct-recovery.zip /path/to/new-recovery-store recovery-owner owner@example.test "Recovery Owner"
+   ```
+
+3. Compare the printed project and attachment counts. The command verifies attachment checksums in the archive and after writing each file. For a local app review, run Wrangler with the built configuration and that same recovery store. Use the local test identity assigned during restore.
+
+   ```sh
+   pnpm exec wrangler dev --config dist/server/wrangler.json --local --persist-to /path/to/new-recovery-store --ip 127.0.0.1 --inspector-port 0
+   ```
+
+4. Verify the selected week, balances, report publication, payment reversal and original uploaded files against the pre-restore project. The M5 automated drill exercises this comparison using the normal workspace and file routes against fresh storage.
+
+The recovery owner gets a new sole membership. Team access, invitations, client links and protected worker identities need separate recovery procedures. The demo drawings and field note ship with the code. Archive imported documents directly in the workspace when they need to be recovered. External receipt URLs stay as links.
 
 ## Labour, costs and payments
 
@@ -31,6 +72,13 @@ Use one test project first. Keep the firm's existing records alongside the pilot
 7. Test an office stock adjustment with a reason. If testing transfers, use a second test project and confirm equal outbound/inbound quantities.
 8. Return an unapproved invoice, correct it and resubmit. An approved unpaid invoice can be reversed with a reason; its old cost remains in history and stops counting. A paid invoice first requires reversal/reconciliation of its payment record.
 9. Supplier invoices are entered per order line in this pilot. Use distinct references for separately entered supplier lines; aggregate multi-line invoice entry and supplier tax validation are remaining work.
+
+## Drawings and client updates walkthrough
+
+1. In **Drawings & evidence**, choose **Open client updates walkthrough**. Issue A-101 revision 2 and check that revision 1 moves to **Drafts and revision history**. Acknowledge and publish revision 2. The Pages **Site foreman** view should show only revision 2 and can record its own acknowledgement.
+2. Publish the reviewed canopy field note. Open **Weekly report**, review the selected sample week and publish the update. The client view should show the published note, field note and current drawing. Download the PDF and Excel workbook and compare the week, progress, summary, next steps and open issues.
+3. Revise **VO-DEMO-M4-001** and resend it. In the sample client view, decide on revision 2. The KSh 48,000 accepted amount brings the KSh 2,250,000 contract to KSh 2,298,000. The two activity days do not move completion because this variation has no completion effect.
+4. Edit the weekly note and verify it returns to draft. The edited note becomes available for download after it is reviewed and published. Repeat the walkthrough with separate signed-in roles during the Archi-Hub pilot.
 
 ## Design, evidence and client decisions
 

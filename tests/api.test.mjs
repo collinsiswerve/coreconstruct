@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {databaseFixture,moduleLoader,command,request} from './helpers.mjs';
-const fixture=databaseFixture(),load=moduleLoader(fixture),api=await load('app/api/workspace/route.ts'),team=await load('app/api/team/route.ts'),join=await load('app/api/invitations/route.ts'),portal=await load('app/api/portal/route.ts'),files=await load('app/api/files/route.ts');
+const fixture=databaseFixture('owner', 'other'),load=moduleLoader(fixture),api=await load('app/api/workspace/route.ts'),team=await load('app/api/team/route.ts'),join=await load('app/api/invitations/route.ts'),portal=await load('app/api/portal/route.ts'),files=await load('app/api/files/route.ts');
 const login=id=>{fixture.user=id?{userId:id,displayName:id,email:id+'@example.test'}:null;};
 const get=async org=>{const r=await api.GET(request('/api/workspace',undefined,org));return {r,...await r.json()};};
 const post=(body,org,origin)=>api.POST(request('/api/workspace',body,org,origin));

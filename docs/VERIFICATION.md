@@ -1,4 +1,19 @@
-# Verification record — 30 October 2026
+# Verification record
+
+## M5 release drill — 14 November 2026
+
+| Check | Result |
+| --- | --- |
+| Weekly close | KSh 4,300 approved costs, KSh 2,500 confirmed cash out and KSh 1,800 payable. The open order commitment was KSh 4,200. Wagebill approved and weekly client update published. |
+| Financial correction | Reversing the KSh 1,000 supplier payment reopened the balance to KSh 2,800 and released its linked funding. The corrected payment restored the KSh 1,800 balance. The reversal remained in history. |
+| Role and firm access | Separate test identities drove the normal routes. The client saw the published update and receipt application. Another firm and a revoked test member were denied project and attachment access. |
+| Offline retry | An interrupted delivery-note upload and an interrupted delivery save recovered as one delivery and two attachments. A stale attendance edit stayed in the review queue. |
+| Recovery | A clean database and file store recovered the project, balances, payment history, report and exact photo/PDF bytes. A missing or altered attachment failed verification. The operator command also restored one project and one file to local D1 and R2 on disk. |
+| Build checks | 72 automated tests passed. Type checking, Worker build and Pages build passed. |
+
+Use the [weekly close demo](https://collinsiswerve.github.io/coreconstruct/?view=pilot&v=10) to try the workflow. Signed-in Archi-Hub role checks and testing on the pilot phones remain part of the controlled pilot.
+
+## Initial verification — 30 October 2026
 
 | Check | Result | Practical scope |
 | --- | --- | --- |

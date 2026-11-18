@@ -47,6 +47,7 @@ yarn-error.log*
 # Operational records never belong in source control
 /exports/
 /coreconstruct-backup-*.json
+/coreconstruct-recovery-*.zip
 /coreconstruct-*.csv
 /private-records/
 

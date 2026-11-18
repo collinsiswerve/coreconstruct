@@ -1,4 +1,44 @@
 'use client';
+
 import { useState } from 'react';
 import { Building2 } from 'lucide-react';
-export default function JoinClient({token}:{token:string}){const [error,setError]=useState(''),[busy,setBusy]=useState(false),[done,setDone]=useState(false);async function accept(){setBusy(true);try{const r=await fetch('/api/invitations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token})}),v=await r.json() as {error?:string;organizationId:string};if(!r.ok)throw new Error(v.error||'Invitation could not be accepted.');localStorage.setItem('cc-organization',v.organizationId);setDone(true);}catch(e){setError(e instanceof Error?e.message:'Unable to connect.');}finally{setBusy(false);}}return <div className="portal-shell"><section className="portal-login"><Building2 size={32}/><h1>{done?'Project access accepted':'Join your project team'}</h1><p>{done?'Your assigned firm and project roles are ready.':'Use the email account invited by the principal. Invitations expire after seven days and can be used once.'}</p>{error&&<div className="notice error">{error}</div>}{done?<a className="btn primary" href="/">Open workspace</a>:<><button className="btn primary" disabled={busy} onClick={()=>void accept()}>{busy?'Checking invitation…':'Accept project invitation'}</button><a className="btn" href={'/signin-with-chatgpt?return_to='+encodeURIComponent('/join/'+token)} target="_top">Sign in with invited account</a></>}</section></div>;}
+import { useWorkspaceRuntime } from './workspace-runtime';
+import { AccountSignOut } from './account-sign-out';
+
+export default function JoinClient({ token }: { token: string }) {
+  const { request, demo } = useWorkspaceRuntime();
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+
+  async function accept() {
+    setBusy(true);
+    setError('');
+    try {
+      const response = await request('/api/invitations', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }),
+      });
+      const value = await response.json() as { error?: string; organizationId: string };
+      if (!response.ok) throw new Error(value.error || 'Invitation could not be accepted.');
+      if (!demo) localStorage.setItem('cc-organization', value.organizationId);
+      setDone(true);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Unable to connect.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <div className="portal-shell"><section className="portal-login">
+    <Building2 size={32} aria-hidden="true" />
+    <h1>{done ? 'Project access accepted' : 'Join your project team'}</h1>
+    <p>{done ? 'Your assigned firm and project roles are ready.'
+      : demo?.onboarding ? 'Accept this fictional invitation in the Ridgeway rehearsal.'
+      : 'Use the email account invited by the principal. Invitations expire after seven days and can be used once.'}</p>
+    {error && <div className="notice error" role="alert">{error}</div>}
+    {done ? <a className="btn primary" href={demo?.onboardingHref ?? '/'}>{demo?.onboarding ? 'Return to workspace setup' : 'Open workspace'}</a> : <>
+      <button className="btn primary" disabled={busy} onClick={() => void accept()}>{busy ? 'Checking invitation…' : 'Accept project invitation'}</button>
+      {!demo && <AccountSignOut className="btn" returnTo={'/join/' + token}>Sign out to switch accounts</AccountSignOut>}
+    </>}
+  </section></div>;
+}
