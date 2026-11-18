@@ -257,6 +257,11 @@ export default function Workspace() {
       await requireFieldResponse(r,'The record could not be saved.');
       const data = await r.json() as WorkspaceResponse;
       if(data.actor?.id!==scope.id||data.actor.organizationId!==scope.organizationId)throw new Error('The save has not been confirmed.');
+      if (type === 'brand.update') {
+        const address = new URL(window.location.href);
+        address.searchParams.delete('theme');
+        window.history.replaceState(window.history.state, '', address.pathname + address.search);
+      }
       refreshSequence.current++;
       setState(normalizeState(data.state));setActor(data.actor);clearSave();
       if (type === 'demo.portfolio.load') {

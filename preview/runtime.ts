@@ -35,15 +35,17 @@ export async function createDemoRuntime() {
   const billingPrincipal: Actor = { ...onboardingPrincipal, organizationId: 'ridgeway-billing' };
   const team = isOnboarding ? onboardingTeam(storage + '-team', root, onboardingPrincipal) : undefined;
   function withDemo(query: URLSearchParams) {
+    if (params.get('theme') === 'site-ultra') query.set('theme', 'site-ultra');
     if (isOnboarding) query.set('demo', 'onboarding');
     else if (isBilling) query.set('demo', 'billing');
     else if (isScorecard) query.set('demo', 'scorecard');
     else if (isPortfolio) query.set('demo', 'portfolio');
     return query;
   }
-  const setupUrl = new URL('?demo=onboarding', root).href;
-  const scorecardUrl = new URL('?' + new URLSearchParams({ demo: 'scorecard', view: 'pilot', project: scorecardSampleProject }), root).href;
-  const billingUrl = new URL('?demo=billing&view=billing', root).href;
+  const appearance: Record<string, string> = params.get('theme') === 'site-ultra' ? { theme: 'site-ultra' } : {};
+  const setupUrl = new URL('?' + new URLSearchParams({ demo: 'onboarding', ...appearance }), root).href;
+  const scorecardUrl = new URL('?' + new URLSearchParams({ demo: 'scorecard', view: 'pilot', project: scorecardSampleProject, ...appearance }), root).href;
+  const billingUrl = new URL('?' + new URLSearchParams({ demo: 'billing', view: 'billing', ...appearance }), root).href;
   const requestedRole = params.get('as');
   const previewRole = requestedRole === 'pm' || requestedRole === 'accounts' || requestedRole === 'finance' || requestedRole === 'foreman' || requestedRole === 'architect' ? requestedRole : 'admin';
   let current = isOnboarding || isBilling ? normalizeState({ ...emptyState(), firm: isBilling ? 'Ridgeway Works' : defaultFirmName })
@@ -183,6 +185,7 @@ export async function createDemoRuntime() {
         authorize(state, command, actor);
         const syntheticDate = isPortfolio && command.type === 'variation.decide' ? portfolioAsOf + 'T08:00:00.000Z' : undefined;
         state = executeSuite(state, command, actor, syntheticDate);
+        if (command.type === 'brand.update') params.delete('theme');
         save(state);
         return response();
       }
@@ -267,7 +270,7 @@ export async function createDemoRuntime() {
       billingHref: billingUrl,
       ...(isScorecard && { scorecard: { projectId: scorecardSampleProject } }),
       ...(team && { canPreviewRole: (role: Role, projectId: string) => role === 'admin' || !!team.actorFor(role, projectId) }),
-      ...(isPortfolio && { portfolio: { href: new URL('?view=portfolio&demo=' + (isScorecard ? 'scorecard' : 'portfolio'), root).href, asOf: portfolioAsOf } }),
+      ...(isPortfolio && { portfolio: { href: new URL('?' + withDemo(new URLSearchParams({ view: 'portfolio' })), root).href, asOf: portfolioAsOf } }),
       switchRole(role: string, projectId: string, currentView?: string) {
         if (role === 'client' && projectId) {
           location.assign(href('/client/' + projectId));
